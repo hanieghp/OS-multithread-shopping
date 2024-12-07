@@ -1,29 +1,54 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <semaphore.h>
+#include <dirent.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include <sys/types.h>
 //#include <windows.h>
 #include "OS-multithread-shopping/CreatCategoryProccess.c" 
 
 #define MAX_PRODUCTS 80
 #define MAX_NAME_LEN 100
+#define MAX_PATH_LEN 1000
 #define storeCount 3
 #define categoryCount 8
+#define maxUser 10
 
-typedef struct { 
+#define SEM_PRODUCT_SEARCH "/product_search_sem"
+#define SEM_RESULT_UPDATE "/result_update_sem"
+
+#define SHM_KEY 0x1234
+
+typedef struct {
     char name[MAX_NAME_LEN]; 
     double price; 
     double score; 
-    int entity; 
+    int entity;
+    char lastModified[50];
+    int foundFlag; //to check if product is found 
 } Product;
 
-typedef struct {
+typedef struct { 
     char userID[MAX_NAME_LEN];
     Product products[MAX_PRODUCTS];
     int productCount;
     double budgetCap; // if enter no budget cap, set it -1
     double totalCost;
-    int store_match_count[3];
+    int store_match_count[storeCount];
+    pid_t userPID;
+    int processingComplete;
 } UserShoppingList;
+
+typedef struct { //shared memory structure
+    UserShoppingList users[maxUser];
+    int activeUserCount;
+} SharedMemoryData;
+
+SharedMemoryData* sharedData = NULL;
 
 char* categories[] = {
         "Digital",
@@ -36,8 +61,14 @@ char* categories[] = {
         "Sports"
 };
 
+//define all functions
+void processCategories(const char* storePath, UserShoppingList* shoppingList);
+void processStroes(UserShoppingList* shoppingList);
+void processUser(UserShoppingList* shoppingList);
+
 UserShoppingList* read_user_shopping_list() {
     UserShoppingList* shoppingList = malloc(sizeof(UserShoppingList));
+    memset(shoppingList, 0, sizeof(UserShoppingList));
     
     printf("Enter User ID: ");
     scanf("%99s", shoppingList->userID);
@@ -48,7 +79,7 @@ UserShoppingList* read_user_shopping_list() {
 
 
     printf("Order list: \n");
-    for (int i = 0; i < shopping_list->productCount; i++) {
+    for (int i = 0; i < shoppingList->productCount; i++) {
         printf("Product %d Name: ", i + 1);
         scanf("%99s", shoppingList->products[i].name);
         
@@ -58,8 +89,57 @@ UserShoppingList* read_user_shopping_list() {
     printf("Enter Budget Cap (-1 for no cap): ");
     scanf("%lf", &shoppingList->budgetCap);
     
+    shoppingList->userPID = getpid();
     return shoppingList;
 }
+
+Product* readProductFromFile(const char* filepath) {
+    FILE* file = fopen(filepath, "r");
+    if (!file) {
+        return NULL;
+    }
+
+    Product* product = malloc(sizeof(Product));
+    memset(product, 0, sizeof(Product));
+    char line[200];
+
+    while (fgets(line, sizeof(line), file)) {
+        if (strncmp(line, "Name:", 5) == 0) {
+            sscanf(line, "Name: %99[^\n]", product->name);
+        } else if (strncmp(line, "Price:", 6) == 0) {
+            sscanf(line, "Price: %lf", &product->price);
+        } else if (strncmp(line, "Score:", 6) == 0) {
+            sscanf(line, "Score: %lf", &product->score);
+        } else if (strncmp(line, "Entity:", 7) == 0) {
+            sscanf(line, "Entity: %d", &product->entity);
+        } else if (strncmp(line, "Last Modified:", 14) == 0) {
+            sscanf(line, "Last Modified: %49[^\n]", product->lastModified);
+        }
+    }
+
+    fclose(file);
+    product->foundFlag = 0;
+    return product;
+}
+
+int initializeSharedMemory() {
+    int shmid = shmget(SHM_KEY, sizeof(SharedMemoryData), IPC_CREAT | 0666);
+    if (shmid == -1) {
+        perror("shmget failed");
+        return -1;
+    }
+
+    sharedData = (SharedMemoryData*)shmat(shmid, NULL, 0);
+    if (sharedData == (void*) -1) {
+        perror("shmat failed");
+        return -1;
+    }
+
+    // Initialize shared memory
+    memset(sharedData, 0, sizeof(SharedMemoryData));
+    return shmid;
+}
+
 
 char** getSubDirectories(char dir[1000]){
     int count = 0;
@@ -88,7 +168,7 @@ Product* searchProductInCategory(const char* categoryPath, const char* productNa
     // neeed to implement
 }
 
-void processStoreCategories(const char* storePath, UserShoppingList* shoppingList){//making process for categories
+void processCategories(const char* storePath, UserShoppingList* shoppingList){//making process for categories
     char** categories = getSubDirectories(storePath);
 
     for(int i = 0; i < categoryCount; i++){
@@ -119,13 +199,13 @@ void processStoreCategories(const char* storePath, UserShoppingList* shoppingLis
     free(categories);
 }
 
-void processStroes(UserShoppingList* shoppingList){ //making process for stores
+void processStores(UserShoppingList* shoppingList){ //making process for stores
     char** stores = getSubDirectories("Dataset");
     for(int i = 0; i < storeCount; i++){
         pid_t pidStore = vfork();
         if(pidStore == 0){
             printf("processing store: %s\n",stores[i]);
-            processStoreCategories(stores[i],shoppingList);
+            processCategories(stores[i],shoppingList);
             exit(0);
         }
         else if(pidStore < 0){
@@ -138,20 +218,72 @@ void processStroes(UserShoppingList* shoppingList){ //making process for stores
     free(stores);
 }
 
+void processUser(UserShoppingList* shoppingList){
+    //semaphore
+    sem_unlink(SEM_PRODUCT_SEARCH);
+    sem_unlink(SEM_RESULT_UPDATE);
+    
+    sem_t* search_sem = sem_open(SEM_PRODUCT_SEARCH, O_CREAT, 0644, 1);
+    sem_t* result_sem = sem_open(SEM_RESULT_UPDATE, O_CREAT, 0644, 1);
+    
+    if (search_sem == SEM_FAILED || result_sem == SEM_FAILED) {
+        perror("Semaphore creation failed");
+        return;
+    }
+
+    // Process stores to find products
+    processStores(shoppingList);
+
+    // Print processed products
+    printf("\nProcessed Shopping List for User %s:\n", shoppingList->userID);
+    for (int i = 0; i < shoppingList->productCount; i++) {
+        if (shoppingList->products[i].foundFlag) {
+            printf("Product %d: %s (Price: %.2f, Score: %.2f, Entity: %d)\n", 
+                   i+1, 
+                   shoppingList->products[i].name,
+                   shoppingList->products[i].price,
+                   shoppingList->products[i].score,
+                   shoppingList->products[i].entity);
+        } else {
+            printf("Product %d: %s - Not Found\n", 
+                   i+1, 
+                   shoppingList->products[i].name);
+        }
+    }
+
+    // Clean up semaphores
+    sem_close(search_sem);
+    sem_close(result_sem);
+    sem_unlink(SEM_PRODUCT_SEARCH);
+    sem_unlink(SEM_RESULT_UPDATE);
+
+}
+
 int main(){
+
+    int shmID = initializeSharedMemory();
+    if(shmID == -1){
+        return 1;
+    }
+
     while (1) {
         pid_t pidUser = vfork(); //process user
 
         if(pidUser < 0){
             perror("Failed to fork for User\n");
+            break;
         }
         else if(pidUser == 0){ 
             UserShoppingList* shoppingList = read_user_shopping_list();
-            processStroes(shoppingList);
+            processUser(shoppingList);
             free(shoppingList);
             exit(0);
         }
     }
+
     printf("Exiting...\n");
+    //detach and remove shared memory
+    shmdt(sharedData);
+    //shmctl(shmID, IPC_RMID, NULL);
     return 0;
 }
