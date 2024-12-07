@@ -66,32 +66,6 @@ void processCategories(const char* storePath, UserShoppingList* shoppingList);
 void processStroes(UserShoppingList* shoppingList);
 void processUser(UserShoppingList* shoppingList);
 
-UserShoppingList* read_user_shopping_list() {
-    UserShoppingList* shoppingList = malloc(sizeof(UserShoppingList));
-    memset(shoppingList, 0, sizeof(UserShoppingList));
-    
-    printf("Enter User ID: ");
-    scanf("%99s", shoppingList->userID);
-    
-    
-    printf("Enter number of products: ");
-    scanf("%d", &shoppingList->productCount);
-
-
-    printf("Order list: \n");
-    for (int i = 0; i < shoppingList->productCount; i++) {
-        printf("Product %d Name: ", i + 1);
-        scanf("%99s", shoppingList->products[i].name);
-        
-        printf("Product %d Quantity: ", i + 1);
-        scanf("%d", &shoppingList->products[i].entity);
-    }
-    printf("Enter Budget Cap (-1 for no cap): ");
-    scanf("%lf", &shoppingList->budgetCap);
-    
-    shoppingList->userPID = getpid();
-    return shoppingList;
-}
 
 Product* readProductFromFile(const char* filepath) {
     FILE* file = fopen(filepath, "r");
@@ -120,6 +94,98 @@ Product* readProductFromFile(const char* filepath) {
     fclose(file);
     product->foundFlag = 0;
     return product;
+}
+
+UserShoppingList* read_user_shopping_list() {
+    UserShoppingList* shoppingList = malloc(sizeof(UserShoppingList));
+    memset(shoppingList, 0, sizeof(UserShoppingList));
+    
+    printf("Enter User ID: ");
+    scanf("%99s", shoppingList->userID);
+    
+    
+    printf("Enter number of products: ");
+    scanf("%d", &shoppingList->productCount);
+
+
+    printf("Order list: \n");
+    for (int i = 0; i < shoppingList->productCount; i++) {
+        printf("Product %d Name: ", i + 1);
+        scanf("%99s", shoppingList->products[i].name);
+        
+        printf("Product %d Quantity: ", i + 1);
+        scanf("%d", &shoppingList->products[i].entity);
+    }
+    printf("Enter Budget Cap (-1 for no cap): ");
+    scanf("%lf", &shoppingList->budgetCap);
+    
+    shoppingList->userPID = getpid();
+    return shoppingList;
+}
+
+// Function to list all products in a category
+void listCategoryProducts(const char* categoryPath) {
+    DIR* dir;
+    struct dirent* entry;
+
+
+    dir = opendir(categoryPath);
+    if (dir == NULL) {
+        printf("Unable to open category directory: %s\n", categoryPath);
+        return;
+    }
+
+
+    printf("Products in category: %s\n", categoryPath);
+
+
+    while ((entry = readdir(dir)) != NULL) {
+        if (entry->d_type == DT_REG) {  // If it's a regular file
+            char filepath[MAX_PATH_LEN];
+            snprintf(filepath, sizeof(filepath), "%s/%s", categoryPath, entry->d_name);
+
+
+            Product* product = readProductFromFile(filepath);
+            if (product) {
+                printf("- %s (Price: %.2f, Score: %.2f, Quantity: %d)\n", 
+                       product->name, product->price, product->score, product->entity);
+                free(product);
+            }
+        }
+    }
+
+
+    closedir(dir);
+}
+
+// Function to list all products in a store
+void listStoreProducts(const char* storePath) {
+    DIR* dir;
+    struct dirent* entry;
+
+
+    dir = opendir(storePath);
+    if (dir == NULL) {
+        printf("Unable to open store directory: %s\n", storePath);
+        return;
+    }
+
+
+    printf("Listing products for store: %s\n", storePath);
+
+
+    while ((entry = readdir(dir)) != NULL) {
+        if (entry->d_type == DT_DIR && 
+            strcmp(entry->d_name, ".") != 0 && 
+            strcmp(entry->d_name, "..") != 0) {  // If it's a subdirectory (category)
+            char categoryPath[MAX_PATH_LEN];
+            snprintf(categoryPath, sizeof(categoryPath), "%s/%s", storePath, entry->d_name);
+            listCategoryProducts(categoryPath);
+        }
+    }
+
+
+    closedir(dir);
 }
 
 int initializeSharedMemory() {
@@ -166,6 +232,32 @@ char** getSubDirectories(char dir[1000]){
 Product* searchProductInCategory(const char* categoryPath, const char* productName){
     return NULL;
     // neeed to implement
+    DIR *dir;
+    struct dirent *entry;
+    
+    dir = opendir(categoryPath);
+    if (dir == NULL) {
+        printf("Unable to open category directory: %s\n", categoryPath);
+        return NULL;
+    }
+    
+    while ((entry = readdir(dir)) != NULL) {
+        if (entry->d_type == DT_REG) {  // If it's a regular file
+            char filepath[MAX_PATH_LEN];
+            snprintf(filepath, sizeof(filepath), "%s/%s", categoryPath, entry->d_name);
+            
+            Product* product = readProductFromFile(filepath);
+            if (product && strcasecmp(product->name, productName) == 0) {
+                closedir(dir);
+                return product;
+            }
+            if (product) free(product);
+        }
+    }
+    
+    closedir(dir);
+    return NULL;
+
 }
 
 void processCategories(const char* storePath, UserShoppingList* shoppingList){//making process for categories
@@ -183,6 +275,9 @@ void processCategories(const char* storePath, UserShoppingList* shoppingList){//
                 Product* foundProduct = searchProductInCategory(categoryFile, shoppingList->products[i].name);
                 if(foundProduct){ // found product in category store
                     printf("found product: %s in %s\n",shoppingList->products[j].name, categoryFile);
+                    shoppingList->products[j].foundFlag = 1;
+                    memcpy(&shoppingList->products[j], foundProduct, sizeof(Product));
+                    free(foundProduct);
                     // hala ke peyda shod mitone bekhare
                     // badan piadesazi beshe
                 }
@@ -198,6 +293,8 @@ void processCategories(const char* storePath, UserShoppingList* shoppingList){//
     }
     free(categories);
 }
+
+
 
 void processStores(UserShoppingList* shoppingList){ //making process for stores
     char** stores = getSubDirectories("Dataset");
@@ -260,6 +357,8 @@ void processUser(UserShoppingList* shoppingList){
 }
 
 int main(){
+    /*char storePath[MAX_PATH_LEN] = "Dataset/Store1";
+    listStoreProducts(storePath);*/
 
     int shmID = initializeSharedMemory();
     if(shmID == -1){
