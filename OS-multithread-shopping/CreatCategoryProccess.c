@@ -43,7 +43,7 @@ UserData *processShoppingList () {
     UserData *userData = malloc(sizeof(UserData));
     if (userData == NULL) {
         perror("Failed to allocate memory\n");
-        return 1;
+        return NULL;
     }
 
     printf("Enter user ID (or 'exit' to quit): ");
@@ -84,16 +84,13 @@ char** getSubDirectories(char dir[1000]){
     int count = 0;
     char **categories = malloc(sizeof(char *) * 1000);       
     char sdir[1000], command[1000];
-    printf("im in\n");
     snprintf(command, sizeof(command), "find %s -maxdepth 1 -type d", dir);
-    printf("im in\n");
     FILE *fp = popen((command), "r");
-    printf("im in\n");
     
     if (!fp) {
         perror("Error opening files");
         if (fp) fclose(fp);
-        return;
+        return NULL;
     }
     fgets(sdir, sizeof(sdir), fp);
     while(fgets(sdir, sizeof(sdir), fp)!=NULL){

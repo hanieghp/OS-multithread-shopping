@@ -30,6 +30,7 @@ int main(){
                     printf("im searching for your items in store%d\n", i);
                     //creating childs fot categories
                     char ** categories;
+                    stores[i][strcspn(stores[i], "\n")] = 0;
                     categories = getSubDirectories(stores[i]);
                 }
                 if(pidStore < 0){
