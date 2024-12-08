@@ -57,19 +57,6 @@ typedef struct { //shared memory structure
 
 SharedMemoryData* sharedData = NULL;
 
-
-char* categories[] = {
-       "Digital",
-       "Home",
-       "Apperal",
-       "Food",
-       "Markets",
-       "Toys",
-       "Beauty",
-       "Sports"
-};
-
-
 //define all functions
 void processCategories(const char* storePath, UserShoppingList* shoppingList);
 void processStroes(UserShoppingList* shoppingList);
@@ -217,7 +204,7 @@ int initializeSharedMemory() {
 char** getSubDirectories(char dir[1000]){
    int count = 0;
    char **categories = malloc(sizeof(char *) * 1000);      
-   char sdir[1000], command[1000];
+   char subDir[1000], command[1000];
    snprintf(command, sizeof(command), "find %s -maxdepth 1 -type d", dir);
    FILE *fp = popen((command), "r");
   
@@ -226,10 +213,10 @@ char** getSubDirectories(char dir[1000]){
        if (fp) fclose(fp);
        return NULL;
    }
-   fgets(sdir, sizeof(sdir), fp);
-   while(fgets(sdir, sizeof(sdir), fp)!=NULL){
-       printf("%s", sdir);
-       categories[count] = strdup(sdir);
+   fgets(subDir, sizeof(subDir), fp);
+   while(fgets(subDir, sizeof(subDir), fp)!=NULL){
+       //printf("subDIR stores : %s", subDir);
+       categories[count] = strdup(subDir);
        count++;                
    }
    pclose(fp);
@@ -310,6 +297,7 @@ void processStores(UserShoppingList* shoppingList){ //making process for stores
        pid_t pidStore = vfork();
        if(pidStore == 0){
            printf("processing store: %s\n",stores[i]);
+           stores[i][strcspn(stores[i], "\n")] = 0;
            processCategories(stores[i],shoppingList);
            exit(0);
        }
