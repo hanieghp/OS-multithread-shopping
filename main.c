@@ -54,6 +54,13 @@ typedef struct { //shared memory structure
 } SharedMemoryData;
 
 
+typedef struct {
+   char categoryAddress[MAX_NAME_LEN];
+   char name[MAX_NAME_LEN];
+   Product *product;
+} threadInput;
+
+
 SharedMemoryData* sharedData = NULL;
 
 //define all functions
@@ -221,7 +228,7 @@ char** getSubDirectories(char dir[1000]){
    return categories;
 }
 
-Product* searchProductInCategory(const char* categoryPath, const char* productName){
+/*Product* searchProductInCategory(const char* categoryPath, const char* productName){
    //return NULL;
    // neeed to implement
    DIR *dir;
@@ -251,29 +258,70 @@ Product* searchProductInCategory(const char* categoryPath, const char* productNa
 
 
 }
+*/
+void searchProductInCategory(void* args){
+   //return NULL;
+   // neeed to implement
+   threadInput *input = (threadInput *)args; 
+   printf("productName : %s\n", *(input->name));
+   DIR *dir;
+   struct dirent *entry;
+   //char categoryPath[MAX_PATH_LEN] = input->categoryAddress;
+   //char productName[MAX_NAME_LEN] = input->product;
+   
+   dir = opendir(input->categoryAddress);
+   /*if (dir == NULL) {
+       printf("Unable to open category directory: %s\n", input->categoryAddress);
+       return;
+   }
+  
+   while ((entry = readdir(dir)) != NULL) {
+       if (entry->d_type == DT_REG) {  // If it's a regular file
+           char filepath[MAX_PATH_LEN];
+           snprintf(filepath, sizeof(filepath), "%s/%s", input->categoryAddress, entry->d_name);
+           Product* product = readProductFromFile(filepath);
+           if (product && strcasecmp(product->name, input->name) == 0) {
+               closedir(dir);
+               input->product = product;
+           }
+           if (product) free(product);
+       }
+   }
+  
+   closedir(dir);*/
+   //return NULL;
+}
 
 void processCategories(const char* storePath, UserShoppingList* shoppingList){//making process for categories
    char** categories = getSubDirectories(storePath);
-
-
    for(int i = 0; i < categoryCount; i++){
        pid_t pidCategory = vfork();
        if(pidCategory == 0){
-           printf("processing category: %s\n",categories[i]);
+
+            pthread_t threads[shoppingList->productCount];
+            printf("processing category: %s\n",categories[i]);
           
-           for(int j = 0; j < shoppingList->productCount; j++){
-               char productFile[1000],categoryFile[1000];
+            for(int j = 0; j < shoppingList->productCount; j++){
+               pthread_t thread_id;
+               threads[j] = thread_id;
+               char productFile[1000];
                categories[i][strcspn(categories[i], "\n")] = 0;
-               
-               Product* foundProduct = searchProductInCategory(categories[i], shoppingList->products[j].name);
+               Product* foundProduct = NULL;
+               threadInput *input = {shoppingList->products[j].name,  categories[i], foundProduct};
+               pthread_create(thread_id, NULL, searchProductInCategory, (void*) &input);
+               //Product* foundProduct = searchProductInCategory(categories[i], shoppingList->products[j].name);
                if(foundProduct){ // found product in category store
                    printf("found product: %s in %s\n",shoppingList->products[j].name, categories[i]);
                    shoppingList->products[j].foundFlag = 1;
                    memcpy(&shoppingList->products[j], foundProduct, sizeof(Product));
+                
                    free(foundProduct);
                    // hala ke peyda shod mitone bekhare
                    // badan piadesazi beshe
                }
+           }
+           for (int j = 0; j < shoppingList->productCount; j++){
+                pthread_join(threads[j], NULL);
            }
            exit(0);
        }
