@@ -8,7 +8,6 @@
 #include <sys/ipc.h>
 #include <sys/shm.h>
 #include <sys/types.h>
-//#include <windows.h>
 #include "OS-multithread-shopping/CreatCategoryProccess.c"
 
 
@@ -79,7 +78,7 @@ Product* readProductFromFile(const char* filepath) {
        if (strncmp(line, "Name:", 5) == 0) {
            sscanf(line, "Name: %99[^\n]", product->name);
        } else if (strncmp(line, "Price:", 6) == 0) {
-           sscanf(line, "Price: %lf", &product->price);
+           sscanf(line, "Price: %lf[\n]", &product->price);
        } else if (strncmp(line, "Score:", 6) == 0) {
            sscanf(line, "Score: %lf", &product->score);
        } else if (strncmp(line, "Entity:", 7) == 0) {
@@ -111,7 +110,6 @@ UserShoppingList* read_user_shopping_list() {
    for (int i = 0; i < shoppingList->productCount; i++) {
        printf("Product %d Name: ", i + 1);
        scanf("%99s", shoppingList->products[i].name);
-      
        printf("Product %d Quantity: ", i + 1);
        scanf("%d", &shoppingList->products[i].entity);
    }
@@ -224,11 +222,11 @@ char** getSubDirectories(char dir[1000]){
 }
 
 Product* searchProductInCategory(const char* categoryPath, const char* productName){
-   return NULL;
+   //return NULL;
    // neeed to implement
    DIR *dir;
    struct dirent *entry;
-  
+    
    dir = opendir(categoryPath);
    if (dir == NULL) {
        printf("Unable to open category directory: %s\n", categoryPath);
@@ -239,7 +237,6 @@ Product* searchProductInCategory(const char* categoryPath, const char* productNa
        if (entry->d_type == DT_REG) {  // If it's a regular file
            char filepath[MAX_PATH_LEN];
            snprintf(filepath, sizeof(filepath), "%s/%s", categoryPath, entry->d_name);
-          
            Product* product = readProductFromFile(filepath);
            if (product && strcasecmp(product->name, productName) == 0) {
                closedir(dir);
@@ -265,13 +262,12 @@ void processCategories(const char* storePath, UserShoppingList* shoppingList){//
            printf("processing category: %s\n",categories[i]);
           
            for(int j = 0; j < shoppingList->productCount; j++){
-               char categoryFile[1000];
-               snprintf(categoryFile, sizeof(categoryFile), "%s/%s.txt", categories[i], shoppingList->products[j].name);
-
-
-               Product* foundProduct = searchProductInCategory(categoryFile, shoppingList->products[i].name);
+               char productFile[1000],categoryFile[1000];
+               categories[i][strcspn(categories[i], "\n")] = 0;
+               
+               Product* foundProduct = searchProductInCategory(categories[i], shoppingList->products[j].name);
                if(foundProduct){ // found product in category store
-                   printf("found product: %s in %s\n",shoppingList->products[j].name, categoryFile);
+                   printf("found product: %s in %s\n",shoppingList->products[j].name, categories[i]);
                    shoppingList->products[j].foundFlag = 1;
                    memcpy(&shoppingList->products[j], foundProduct, sizeof(Product));
                    free(foundProduct);
@@ -359,9 +355,6 @@ void processUser(UserShoppingList* shoppingList){
 
 
 int main(){
-   /*char storePath[MAX_PATH_LEN] = "Dataset/Store1";
-   listStoreProducts(storePath);*/
-
 
    int shmID = initializeSharedMemory();
    if(shmID == -1){
