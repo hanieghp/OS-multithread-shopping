@@ -54,11 +54,13 @@ typedef struct { //shared memory structure
 } SharedMemoryData;
 
 
+
 typedef struct {
-   char categoryAddress[MAX_NAME_LEN];
-   char name[MAX_NAME_LEN];
+   char *categoryAddress;
+   char *name;
    Product *product;
 } threadInput;
+
 
 
 SharedMemoryData* sharedData = NULL;
@@ -259,10 +261,24 @@ char** getSubDirectories(char dir[1000]){
 
 }
 */
-void searchProductInCategory(void* args){
+
+
+void* searchProductInCategory(void* args){
+    printf("hi\n");
+    threadInput *input = (threadInput *)args;
+   printf("productName : %s\n", input->name);
+   //printf("name : %s", input->product->name);
+   memcpy(input->product->name, "bahar", 5);
+   pthread_exit(NULL);
+
+   //DIR *dir;
+   //struct dirent *entry;
+   //dir = opendir(input->categoryAddress);
+}
+/*void *searchProductInCategory(void* args){
    //return NULL;
    // neeed to implement
-   threadInput *input = (threadInput *)args; 
+   threadInput *input = (threadInput *)args;
    printf("productName : %s\n", *(input->name));
    DIR *dir;
    struct dirent *entry;
@@ -287,42 +303,51 @@ void searchProductInCategory(void* args){
            if (product) free(product);
        }
    }
-  
-   closedir(dir);*/
+   closedir(dir);
+    memcpy(input->product->name, "bahar", 5);
+    pthread_exit(NULL);
+
+   closedir(dir);
    //return NULL;
 }
-
+*/
 void processCategories(const char* storePath, UserShoppingList* shoppingList){//making process for categories
    char** categories = getSubDirectories(storePath);
    for(int i = 0; i < categoryCount; i++){
        pid_t pidCategory = vfork();
        if(pidCategory == 0){
 
-            pthread_t threads[shoppingList->productCount];
+            pthread_t threads[3];
             printf("processing category: %s\n",categories[i]);
-          
-            for(int j = 0; j < shoppingList->productCount; j++){
+            Product foundProduct;
+            
+            for(int j = 0; j < 3; j++){
                pthread_t thread_id;
-               threads[j] = thread_id;
+               threads[j] = thread_i
+               d;
                char productFile[1000];
                categories[i][strcspn(categories[i], "\n")] = 0;
-               Product* foundProduct = NULL;
-               threadInput *input = {shoppingList->products[j].name,  categories[i], foundProduct};
-               pthread_create(thread_id, NULL, searchProductInCategory, (void*) &input);
-               //Product* foundProduct = searchProductInCategory(categories[i], shoppingList->products[j].name);
-               if(foundProduct){ // found product in category store
+               threadInput input = {"bahar",  "Dataset", &foundProduct};
+               printf("hiooooo\n");
+        
+                pthread_create(&thread_id, NULL, (&searchProductInCategory),(void*) &input);
+                //Product* foundProduct = searchProductInCategory(categories[i], shoppingList->products[j].name);
+               /*if(foundProduct){ // found product in category store
                    printf("found product: %s in %s\n",shoppingList->products[j].name, categories[i]);
                    shoppingList->products[j].foundFlag = 1;
                    memcpy(&shoppingList->products[j], foundProduct, sizeof(Product));
                 
-                   free(foundProduct);
+                   //free(foundProduct);
                    // hala ke peyda shod mitone bekhare
                    // badan piadesazi beshe
-               }
+               }*/
            }
-           for (int j = 0; j < shoppingList->productCount; j++){
-                pthread_join(threads[j], NULL);
-           }
+           for(int i =0 ; i < 3; i++){
+                pthread_join(threads[i], NULL);
+                printf("finish\n");
+            }
+            printf("name : %s", foundProduct.name);
+
            exit(0);
        }
        else if(pidCategory < 0){
@@ -403,8 +428,24 @@ void processUser(UserShoppingList* shoppingList){
 
 
 int main(){
+    pthread_t threads[3];
+    Product foundProduct;
 
-   int shmID = initializeSharedMemory();
+    for (int i =0 ; i < 3; i++){
+        pthread_t thread_id;
+        threadInput input = {"bahar",  "Dataset", &foundProduct};
+        printf("hi\n");
+        threads[i] = thread_id;
+        pthread_create(&thread_id, NULL, (&searchProductInCategory),(void*) &input);
+    }
+    for(int i =0 ; i < 3; i++){
+        pthread_join(threads[i], NULL);
+        printf("finish\n");
+    }
+
+    printf("name : %s", foundProduct.name);
+
+   /*int shmID = initializeSharedMemory();
    if(shmID == -1){
        return 1;
    }
@@ -431,5 +472,5 @@ int main(){
    //detach and remove shared memory
    shmdt(sharedData);
    //shmctl(shmID, IPC_RMID, NULL);
-   return 0;
+*/   return 0;
 }
