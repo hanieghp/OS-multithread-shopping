@@ -116,7 +116,7 @@ UserShoppingList* read_user_shopping_list() {
   
    printf("Enter number of products: ");
    scanf("%d", &shoppingList->productCount);
-
+    printf("the number : %d\n", shoppingList->productCount);
    printf("Order list: \n");
    for (int i = 0; i < shoppingList->productCount; i++) {
        printf("Product %d Name: ", i + 1);
@@ -219,10 +219,10 @@ int initializeSharedMemory() {
    return shmid;
 }
 
-char** getSubDirectories(char dir[1000]){
+char** getSubDirectories(const char *dir){
    int count = 0;
    char **categories = malloc(sizeof(char *) * 1000);      
-   char subDir[1000], command[1000];
+   char subDir[MAX_PATH_LEN], command[MAX_NAME_LEN];
    snprintf(command, sizeof(command), "find %s -maxdepth 1 -type d", dir);
    FILE *fp = popen((command), "r");
   
@@ -233,42 +233,12 @@ char** getSubDirectories(char dir[1000]){
    }
    fgets(subDir, sizeof(subDir), fp);
    while(fgets(subDir, sizeof(subDir), fp)!=NULL){
-       //printf("subDIR stores : %s", subDir);
        categories[count] = strdup(subDir);
        count++;                
    }
    pclose(fp);
    return categories;
 }
-
-/*Product* searchProductInCategory(const char* categoryPath, const char* productName){
-   //return NULL;
-   // neeed to implement
-   DIR *dir;
-   struct dirent *entry;
-    
-   dir = opendir(categoryPath);
-   if (dir == NULL) {
-       printf("Unabble to open category directory: %s\n", categoryPath);
-       return NULL;
-   }
-  
-   while ((entry = readdir(dir)) != NULL) {
-       if (entry->d_type == DT_REG) {  // If it's a regular file
-           char filepath[MAX_PATH_LEN];
-           snprintf(filepath, sizeof(filepath), "%s/%s", categoryPath, entry->d_name);
-           Product* product = readProductFromFile(filepath);
-           if (product && strcasecmp(product->name, productName) == 0) {
-               closedir(dir);
-               return product;
-           }
-           if (product) free(product);
-       }
-   }
-  
-   closedir(dir);
-   return NULL;
-}*/
 
 void* searchProductInCategory(void* args){
    //return NULL;
@@ -278,6 +248,7 @@ void* searchProductInCategory(void* args){
    struct dirent *entry;
    char categoryPath[MAX_PATH_LEN], command[1000];
     threadInput *input = (threadInput *)args;
+    //printf("input : %s %s\n",input-> input->name);
     snprintf(command, sizeof(command), "find %s -maxdepth 1 -type f", input->categoryAddress);
     FILE *fp = popen((command), "r");
     if (!fp) {
@@ -288,11 +259,8 @@ void* searchProductInCategory(void* args){
     char filepath[MAX_PATH_LEN];
     fgets(filepath, sizeof(filepath), fp);
     while(fgets(filepath, sizeof(filepath), fp)!=NULL){
-        //printf("file name : %s", filepath);
-        //snprintf(filepath, sizeof(filepath), "%s/%s", input->categoryAddress, entry->d_name);
         filepath[strcspn(filepath, "\n")] = 0;
         Product* product = readProductFromFile(filepath);
-        //printf("im in%s\n", product->name);
         if (product && strcasecmp(product->name, input->name) == 0){
             printf("i found it in %s!!!!\n", filepath);
             memcpy(input->product->name, product->name, sizeof(product->name));
@@ -303,7 +271,6 @@ void* searchProductInCategory(void* args){
             input->product->foundFlag = 1;
             return NULL;   
         }
-        //printf("i didnt find");
     }
     printf("i finished the files????\n");             
     pclose(fp);
@@ -316,7 +283,7 @@ void processCategories(const char* storePath, UserShoppingList* shoppingList){//
 
    for(int i = 0; i < categoryCount; i++){
         pthread_t threads[shoppingList->productCount];
-        pid_t pidCategory = vfork();
+        pid_t pidCategory = fork();
         if(pidCategory == 0){
            printf("processing category: %s\n",categories[i]);
           
@@ -326,26 +293,22 @@ void processCategories(const char* storePath, UserShoppingList* shoppingList){//
                 Product foundProduct;
                 pthread_t thread_id;
                 threadInput input={categories[i], shoppingList->products[j].name, &foundProduct};
-                //input.categoryAddress = categories[i];
                 threads[j] = thread_id;
                 pthread_create(&thread_id, NULL, (&searchProductInCategory),(void*) &input);
-
-               //Product* foundProduct = searchProductInCategory(categories[i], shoppingList->products[j].name);
                 if((foundProduct.foundFlag) == 1){ // found product in category store
                    printf("found product: %s in %s\n",shoppingList->products[j].name, categories[i]);
-                   shoppingList->products[j] = foundProduct;
-                   //memcpy(&shoppingList->products[j], foundProduct, sizeof(Product));
-                   //free(foundProduct);
+                   //shoppingList->products[j] = foundProduct;
+                   memcpy(&(shoppingList->products[i]), &foundProduct, sizeof(Product));
                    // hala ke peyda shod mitone bekhare
                    // badan piadesazi beshe
                    break;
-               }
-               if(foundProduct.foundFlag == 1) break;
+                }
+               //if(foundProduct.foundFlag == 1) break;
            }
             for(int j =0 ; j < shoppingList->productCount; j++){
                 printf("heyyy\n");
                 pthread_exit(NULL);
-                
+                printf("after exit\n");
                 pthread_join(threads[j], NULL);
                 printf("thread finish\n");
             }  
@@ -355,16 +318,12 @@ void processCategories(const char* storePath, UserShoppingList* shoppingList){//
        }
    }
    printf("i finished the categories??????\n");
-   /*for(int i = 0; i < categoryCount; i++){
-       free(categories[i]);
-   }
-   free(categories);*/
 }
 
 void processStores(UserShoppingList* shoppingList){ //making process for stores
    char** stores = getSubDirectories("Dataset");
    for(int i = 0; i < storeCount; i++){
-       pid_t pidStore = vfork();
+       pid_t pidStore = fork();
        if(pidStore == 0){
            printf("processing store: %s\n",stores[i]);
            stores[i][strcspn(stores[i], "\n")] = 0;
