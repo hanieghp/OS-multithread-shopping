@@ -269,9 +269,12 @@ void* searchProductInCategory(void* args){
             input->product->score = product->score;
             input->product->entity = product->entity;
             input->product->foundFlag = 1;
+            pclose(fp);
+            //pthread_exit(NULL);
             return NULL;   
         }
     }
+    //pthread_exit(NULL);
     printf("i finished the files????\n");             
     pclose(fp);
     return NULL;
@@ -283,6 +286,7 @@ void processCategories(const char* storePath, UserShoppingList* shoppingList){//
 
    for(int i = 0; i < categoryCount; i++){
         pthread_t threads[shoppingList->productCount];
+        threadInput inputs[shoppingList->productCount];
         pid_t pidCategory = fork();
         if(pidCategory == 0){
            printf("processing category: %s\n",categories[i]);
@@ -291,10 +295,12 @@ void processCategories(const char* storePath, UserShoppingList* shoppingList){//
                 char productFile[1000],categoryFile[1000];
                 categories[i][strcspn(categories[i], "\n")] = 0;
                 Product foundProduct;
-                pthread_t thread_id;
-                threadInput input={categories[i], shoppingList->products[j].name, &foundProduct};
-                threads[j] = thread_id;
-                pthread_create(&thread_id, NULL, (&searchProductInCategory),(void*) &input);
+                //pthread_t thread_id;
+                inputs[j].categoryAddress=categories[i];
+                inputs[j].name = shoppingList->products[j].name;
+                inputs[j].product = &foundProduct;
+                //threads[j] = thread_id;
+                pthread_create(&threads[j], NULL, (&searchProductInCategory),(void*) &inputs[j]);
                 if((foundProduct.foundFlag) == 1){ // found product in category store
                    printf("found product: %s in %s\n",shoppingList->products[j].name, categories[i]);
                    //shoppingList->products[j] = foundProduct;
@@ -306,11 +312,10 @@ void processCategories(const char* storePath, UserShoppingList* shoppingList){//
                //if(foundProduct.foundFlag == 1) break;
            }
             for(int j =0 ; j < shoppingList->productCount; j++){
-                printf("heyyy\n");
-                pthread_exit(NULL);
+                //printf("heyyy\n");
                 printf("after exit\n");
                 pthread_join(threads[j], NULL);
-                printf("thread finish\n");
+                printf("thread finishhhhhhh\n");
             }  
            exit(0);
        }else if(pidCategory < 0){
