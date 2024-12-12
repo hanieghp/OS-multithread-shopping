@@ -484,7 +484,18 @@ void processUser(UserShoppingList* shoppingList){
 
   int bestStore = findBestStore(shoppingList);
 
-  MemberShipDiscount(shoppingList);
+  if(bestStore != -1 && checkBudgetConstraint(shoppingList, bestStore) && checkStoreInventory(shoppingList, bestStore)){
+     printf("buying succesfull\n");
+     printf("your total cost %2.f\n", shoppingList->totalCost);
+
+     updateStoreInventory(shoppingList, bestStore);
+     MemberShipDiscount(shoppingList);
+  }
+  else{
+    printf("you can't buy");
+  }
+
+  
   // Print processed products
    printf("\nProcessed Shopping List for User %s:\n", shoppingList->userID);
    for (int i = 0; i < shoppingList->productCount; i++) {
