@@ -42,7 +42,7 @@ typedef struct {
 
 typedef struct {
    char userID[MAX_NAME_LEN];
-   Product products[MAX_PRODUCTS];
+   Product products[storeCount][MAX_PRODUCTS];
    int productCount;
    double budgetCap; // if enter no budget cap, set it -1
    double totalCost;
@@ -68,7 +68,7 @@ typedef struct {
 SharedMemoryData* sharedData = NULL;
 
 //define all functions
-void processCategories(const char* storePath, UserShoppingList* shoppingList);
+void processCategories(int storeNum, const char* storePath, UserShoppingList* shoppingList);
 void processStroes(UserShoppingList* shoppingList);
 void processUser(UserShoppingList* shoppingList);
 
@@ -120,9 +120,13 @@ UserShoppingList* read_user_shopping_list() {
    printf("Order list: \n");
    for (int i = 0; i < shoppingList->productCount; i++) {
        printf("Product %d Name: ", i + 1);
-       scanf("%99s", shoppingList->products[i].name);
+       scanf("%99s", shoppingList->products[1][i].name);
+       //scanf("%99s", shoppingList->products[2][i].name);
+       //scanf("%99s", shoppingList->products[3][i].name);
        printf("Product %d Quantity: ", i + 1);
-       scanf("%d", &shoppingList->products[i].entity);
+       scanf("%d", &shoppingList->products[1][i].entity);
+       //scanf("%d", &shoppingList->products[2][i].entity);
+       //scanf("%d", &shoppingList->products[3][i].entity);
    }
    printf("Enter Budget Cap (-1 for no cap): ");
    scanf("%lf", &shoppingList->budgetCap);
@@ -188,16 +192,6 @@ void listStoreProducts(const char* storePath) {
    }
    closedir(dir);
 }
-void trim_whitespace(char *str) { 
-    char *end;
-    char *start = str;
-    while (isspace((unsigned char)*str)) start++; 
-
-    end = start + strlen(start) - 1; 
-    while (end > str && isspace((unsigned char)*end)) end--;
-    *(end+1) = '\0';
-    memmove(str, start, end-start+2);
-} 
 
 int initializeSharedMemory() {
    int shmid = shmget(SHM_KEY, sizeof(SharedMemoryData), IPC_CREAT | 0666);
@@ -270,52 +264,47 @@ void* searchProductInCategory(void* args){
             input->product->entity = product->entity;
             input->product->foundFlag = 1;
             pclose(fp);
-            //pthread_exit(NULL);
             return NULL;   
         }
     }
-    //pthread_exit(NULL);
     printf("i finished the files????\n");             
     pclose(fp);
     return NULL;
 }
 
-void processCategories(const char* storePath, UserShoppingList* shoppingList){//making process for categories
+void processCategories(int storeNum, const char* storePath, UserShoppingList* shoppingList){//making process for categories
    char** categories = getSubDirectories(storePath);
 
 
    for(int i = 0; i < categoryCount; i++){
         pthread_t threads[shoppingList->productCount];
         threadInput inputs[shoppingList->productCount];
-        pid_t pidCategory = fork();
+        int totalCost = 0;
+        pid_t pidCategory = vfork();
         if(pidCategory == 0){
            printf("processing category: %s\n",categories[i]);
-          
             for(int j = 0; j < shoppingList->productCount; j++){
                 char productFile[1000],categoryFile[1000];
                 categories[i][strcspn(categories[i], "\n")] = 0;
                 Product foundProduct;
-                //pthread_t thread_id;
                 inputs[j].categoryAddress=categories[i];
-                inputs[j].name = shoppingList->products[j].name;
+                inputs[j].name = shoppingList->products[1][j].name;
                 inputs[j].product = &foundProduct;
-                //threads[j] = thread_id;
+                
                 pthread_create(&threads[j], NULL, (&searchProductInCategory),(void*) &inputs[j]);
                 if((foundProduct.foundFlag) == 1){ // found product in category store
-                   printf("found product: %s in %s\n",shoppingList->products[j].name, categories[i]);
-                   //shoppingList->products[j] = foundProduct;
-                   memcpy(&(shoppingList->products[i]), &foundProduct, sizeof(Product));
-                   // hala ke peyda shod mitone bekhare
-                   // badan piadesazi beshe
+                   //printf("store %d : flag : %s", storeNum, foundProduct.foundFlag);
+                   printf("found product: %s in %s\n",shoppingList->products[1][j].name, categories[i]);
+                   memcpy(&(shoppingList->products[storeNum][j]), &foundProduct, sizeof(Product));
+                    //lock the critical secton
+                    // found product ro brizim too shared memory (critical section)
+                    //unlock the critical section
                    break;
                 }
                //if(foundProduct.foundFlag == 1) break;
            }
             for(int j =0 ; j < shoppingList->productCount; j++){
-                //printf("heyyy\n");
-                printf("after exit\n");
                 pthread_join(threads[j], NULL);
-                printf("thread finishhhhhhh\n");
             }  
            exit(0);
        }else if(pidCategory < 0){
@@ -328,11 +317,11 @@ void processCategories(const char* storePath, UserShoppingList* shoppingList){//
 void processStores(UserShoppingList* shoppingList){ //making process for stores
    char** stores = getSubDirectories("Dataset");
    for(int i = 0; i < storeCount; i++){
-       pid_t pidStore = fork();
+       pid_t pidStore = vfork();
        if(pidStore == 0){
            printf("processing store: %s\n",stores[i]);
            stores[i][strcspn(stores[i], "\n")] = 0;
-           processCategories(stores[i],shoppingList);
+           processCategories(i, stores[i], shoppingList);
            exit(0);
        }
        else if(pidStore < 0){
@@ -365,21 +354,25 @@ void processUser(UserShoppingList* shoppingList){
 
 
    // Print processed products
-   printf("\nProcessed Shopping List for User %s:\n", shoppingList->userID);
-   for (int i = 0; i < shoppingList->productCount; i++) {
-       if (shoppingList->products[i].foundFlag) {
-           printf("Product %d: %s (Price: %.2f, Score: %.2f, Entity: %d)\n",
-                  i+1,
-                  shoppingList->products[i].name,
-                  shoppingList->products[i].price,
-                  shoppingList->products[i].score,
-                  shoppingList->products[i].entity);
-       } else {
-           printf("Product %d: %s - Not Found\n",
-                  i+1,
-                  shoppingList->products[i].name);
-       }
-   }
+    printf("\nProcessed Shopping List for User %s:\n", shoppingList->userID);
+    for (int i = 0; i < shoppingList->productCount; i++) {
+        for (int j = 0; j < storeCount; j++){
+            if (shoppingList->products[j][i].foundFlag) {
+                printf("store %d Product %d: %s (Price: %.2f, Score: %.2f, Entity: %d)\n",
+                        j+1,
+                        i+1,
+                        shoppingList->products[j][i].name,
+                        shoppingList->products[j][i].price,
+                        shoppingList->products[j][i].score,
+                        shoppingList->products[j][i].entity);
+            } else {
+                printf("store %d Product %d: %s - Not Found\n",
+                        j+1,
+                        i+1,
+                        shoppingList->products[j][i].name);
+            }
+        }
+    }
 
 
    // Clean up semaphores
@@ -391,6 +384,29 @@ void processUser(UserShoppingList* shoppingList){
 
 }
 
+int getValue (int price, int score) {
+    return score/price;
+}
+
+int getValueOfStore(Product products[]){
+    int value = 0;
+    for (int i = 0; i < sizeof(products); i++){
+        value+=getValue(products[i].price, products[i].score);
+    }
+    return value;
+}
+/*
+int* getProductsValue (Product products[][]){
+    int maxValues[sizeof(products)];
+    for (int i = 0; i < sizeof(products); i++){
+        for (int j = 0; j < storeCount; j++){
+            int value = getValue(products[j][i]->price, products[j][i]->score);
+            if (maxValues[i] < value){
+                maxValues[i] = value;
+            }
+        }
+    } 
+}*/
 
 int main(){
 
@@ -398,7 +414,6 @@ int main(){
    if(shmID == -1){
        return 1;
    }
-
 
    while (1) {
        pid_t pidUser = vfork(); //process user
@@ -409,10 +424,13 @@ int main(){
            break;
        }
        else if(pidUser == 0){
-           UserShoppingList* shoppingList = read_user_shopping_list();
-           processUser(shoppingList);
-           free(shoppingList);
-           exit(0);
+            pthread_t threads[storeCount];
+            UserShoppingList* shoppingList = read_user_shopping_list();
+            processUser(shoppingList);
+                // show user its choices
+            //pthread_create(&threads[1], NULL, &getProductsValue, shoppingList->products);
+            free(shoppingList);
+            exit(0);
        }
    }
 
