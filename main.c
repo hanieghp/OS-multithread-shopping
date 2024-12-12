@@ -10,6 +10,7 @@
 #include <sys/types.h>
 #include <pthread.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include "OS-multithread-shopping/CreatCategoryProccess.c"
 #include <bits/pthreadtypes.h>
 #include <ctype.h>
@@ -130,7 +131,7 @@ UserShoppingList* read_user_shopping_list() {
    }
    printf("Enter Budget Cap (-1 for no cap): ");
    scanf("%lf", &shoppingList->budgetCap);
-  
+
    shoppingList->userPID = getpid();
    return shoppingList;
 }
@@ -152,10 +153,6 @@ void listCategoryProducts(const char* categoryPath) {
        if (entry->d_type == DT_REG) {  // If it's a regular file
            char filepath[MAX_PATH_LEN];
            snprintf(filepath, sizeof(filepath), "%s/%s", categoryPath, entry->d_name);
-
-
-
-
            Product* product = readProductFromFile(filepath);
            if (product) {
                printf("- %s (Price: %.2f, Score: %.2f, Quantity: %d)\n",
@@ -276,30 +273,33 @@ void processCategories(int storeNum, const char* storePath, UserShoppingList* sh
    char** categories = getSubDirectories(storePath);
 
 
-   for(int i = 0; i < categoryCount; i++){
+    for(int i = 0; i < categoryCount; i++){
         pthread_t threads[shoppingList->productCount];
         threadInput inputs[shoppingList->productCount];
         int totalCost = 0;
         pid_t pidCategory = vfork();
         if(pidCategory == 0){
            printf("processing category: %s\n",categories[i]);
-            for(int j = 0; j < shoppingList->productCount; j++){
+            int proCount = shoppingList->productCount;
+            //Product foundProduct[shoppingList->productCount];
+            for(int j = 0; j < proCount; j++){
                 char productFile[1000],categoryFile[1000];
                 categories[i][strcspn(categories[i], "\n")] = 0;
-                Product foundProduct;
+                Product foundProduct[50];
                 inputs[j].categoryAddress=categories[i];
                 inputs[j].name = shoppingList->products[1][j].name;
-                inputs[j].product = &foundProduct;
+                printf("im in for order %d %s\n",j, shoppingList->products[1][j].name);
+                inputs[j].product = &foundProduct[j];
                 
                 pthread_create(&threads[j], NULL, (&searchProductInCategory),(void*) &inputs[j]);
-                if((foundProduct.foundFlag) == 1){ // found product in category store
+                if((foundProduct[j].foundFlag) == 1){ // found product in category store
                    //printf("store %d : flag : %s", storeNum, foundProduct.foundFlag);
                    printf("found product: %s in %s\n",shoppingList->products[1][j].name, categories[i]);
-                   memcpy(&(shoppingList->products[storeNum][j]), &foundProduct, sizeof(Product));
+                   memcpy(&(shoppingList->products[storeNum][j]), &foundProduct[j], sizeof(Product));
                     //lock the critical secton
                     // found product ro brizim too shared memory (critical section)
                     //unlock the critical section
-                   break;
+                   //break;
                 }
                //if(foundProduct.foundFlag == 1) break;
            }
@@ -310,6 +310,9 @@ void processCategories(int storeNum, const char* storePath, UserShoppingList* sh
        }else if(pidCategory < 0){
            perror("Failed to fork for category\n");
        }
+   }
+   for(int i = 0; i < categoryCount; i++){
+        wait(NULL);
    }
    printf("i finished the categories??????\n");
 }
