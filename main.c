@@ -297,6 +297,7 @@ void processCategories(int storeNum, const char* storePath, UserShoppingList* sh
                    printf("found product: %s in %s\n",shoppingList->products[1][j].name, categories[i]);
                    memcpy(&(shoppingList->products[storeNum][j]), &foundProduct[j], sizeof(Product));
                     //lock the critical secton
+                    sem_wait(&sem);
                     // found product ro brizim too shared memory (critical section)
                     //unlock the critical section
                    //break;
@@ -318,7 +319,9 @@ void processCategories(int storeNum, const char* storePath, UserShoppingList* sh
 }
 
 void processStores(UserShoppingList* shoppingList){ //making process for stores
-   char** stores = getSubDirectories("Dataset");
+    char** stores = getSubDirectories("Dataset");
+    sem_t sem;
+    sem_init(&sem, 1, 1);
    for(int i = 0; i < storeCount; i++){
        pid_t pidStore = vfork();
        if(pidStore == 0){
@@ -335,6 +338,7 @@ void processStores(UserShoppingList* shoppingList){ //making process for stores
        free(stores[i]);
    }
    free(stores);
+   sem_destroy(&sem);
 }
 
 
@@ -393,20 +397,17 @@ int getValue (int price, int score) {
 
 int getValueOfStore(Product products[]){
     int value = 0;
-    for (int i = 0; i < sizeof(products); i++){
+    for (int i = 0; i < sizeof(products)/sizeof(products[0]); i++){
         value+=getValue(products[i].price, products[i].score);
     }
     return value;
 }
-/*
-int* getProductsValue (Product products[][]){
-    int maxValues[sizeof(products)];
-    for (int i = 0; i < sizeof(products); i++){
-        for (int j = 0; j < storeCount; j++){
-            int value = getValue(products[j][i]->price, products[j][i]->score);
-            if (maxValues[i] < value){
-                maxValues[i] = value;
-            }
+
+/*int getBestStore (Product products[][]){
+    int best = 0;
+    for (int i = 0; i < storeCount; i++){
+        if(getValueOfStore(products[i])){
+
         }
     } 
 }*/
