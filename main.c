@@ -131,8 +131,27 @@ int findBestStore(UserShoppingList* shoppingList){
    return bestStore;
 }
 
+void MemberShipDiscount(UserShoppingList* shoppingList){
+    int bestStore = findBestStore(shoppingList);
+    if (bestStore == -1){
+        return;
+    }
+
+    if(shoppingList->membership.buyingCount > 0){
+        for(int i = 0; i < shoppingList->productCount; i++){
+            Product* product = &shoppingList->products[bestStore][i];
+            if(product->foundFlag){
+                product->price *= (1 - discountPercentage);
+            }
+        }
+        printf("hehe discount at store %d\n", bestStore + 1);
+    }
+    shoppingList->membership.buyingCount[bestStore]++;
+}
+
 void* rateProductThread(void* args){
-   Product* product = (Product*)args;
+    threadInput* input = (threadInput*)args;
+   Product* product = input->product;
    double userRate;
 
    printf("rate to %s product (0-5)", product->name);
@@ -140,22 +159,35 @@ void* rateProductThread(void* args){
 
    product->score = (product->score + userRate) / 2.0;
 
+   char filepath[MAX_PATH_LEN];
+   snprintf(filepath, sizeof(filepath), "%s/%s.txt", input->categoryAddress, product->name);
+
+   FILE* file = fopen(filepath, "W");
+   if(file){
+    fprintf(file, "Name: %s\n", product->name);
+    fprintf(file, "Price: %s\n", product->price);
+    fprintf(file, "Score: %s\n", product->score);
+    fprintf(file, "Entity: %s\n", product->entity);
+    fprintf(file, "last modified %s\n", product->lastModified);
+    fclose(file);
+   }
+
    return NULL;
 }
 
-void rateProducts(UserShoppingList* shoppingList, int bestStore){
+void UpdateRateProducts(UserShoppingList* shoppingList, int bestStore){
    pthread_t ratingThread[MAX_PRODUCTS];
-
+   threadInput inputs[MAX_PRODUCTS];
 
    printf("**rate to your products**\n");
 
-
    for(int i = 0; i < shoppingList->productCount; i++){
        if(shoppingList->products[bestStore][i].foundFlag){
-           pthread_create(&ratingThread[i], NULL, rateProductThread, &shoppingList->products[bestStore][i]);
+        char categoryPath[MAX_PATH_LEN];
+        //snprintf(categoryPath, sizeof(categoryPath), "Dataset/Store%d/Category")
+        pthread_create(&ratingThread[i], NULL, rateProductThread, &shoppingList->products[bestStore][i]);
        }
    }
-
 
    for(int i = 0; i < shoppingList->productCount; i++){
        if(shoppingList->products[bestStore][i].foundFlag){
@@ -192,14 +224,10 @@ UserShoppingList* read_user_shopping_list() {
   return shoppingList;
 }
 
-
-
-
 // Function to list all products in a category
 void listCategoryProducts(const char* categoryPath) {
   DIR* dir;
   struct dirent* entry;
-
 
   dir = opendir(categoryPath);
   if (dir == NULL) {
@@ -207,8 +235,6 @@ void listCategoryProducts(const char* categoryPath) {
       return;
   }
   printf("Products in category: %s\n", categoryPath);
-
-
   while ((entry = readdir(dir)) != NULL) {
       if (entry->d_type == DT_REG) {  // If it's a regular file
           char filepath[MAX_PATH_LEN];
@@ -228,17 +254,13 @@ void listCategoryProducts(const char* categoryPath) {
 void listStoreProducts(const char* storePath) {
   DIR* dir;
   struct dirent* entry;
-
-
   dir = opendir(storePath);
   if (dir == NULL) {
       printf("Uunable to open store directory: %s\n", storePath);
       return;
   }
 
-
   printf("Listing products for store: %s\n", storePath);
-
 
   while ((entry = readdir(dir)) != NULL) {
       if (entry->d_type == DT_DIR &&
@@ -271,7 +293,6 @@ char** getSubDirectories(const char *dir){
   pclose(fp);
   return categories;
 }
-
 
 void* searchProductInCategory(void* args){
   //return NULL;
@@ -311,10 +332,27 @@ void* searchProductInCategory(void* args){
    return NULL;
 }
 
+int checkStoreInventory(UserShoppingList* shoppingList, int bestStore){
+    for(int i = 0; i < shoppingList->productCount; i++){
+        Product* Product = &shoppingList->products[bestStore][i];
+
+        if(!product->foundFlag){
+            printf("not found in store %s", shoppingList->products[1][i].name);
+            return 0;
+        }
+
+        if(product->entity < shoppingList->products[1][i].entity){
+            printf("there isn't enought %s product", product->name);
+            printf("There is in store %d", shoppingList->products[1][i].entity, Product->entity);
+            return 0;
+        }
+    }
+    return 1;
+}
+
 
 void processCategories(int storeNum, const char* storePath, UserShoppingList* shoppingList){//making process for categories
   char** categories = getSubDirectories(storePath);
-
 
    for(int i = 0; i < categoryCount; i++){
        pthread_t threads[shoppingList->productCount];
@@ -385,22 +423,6 @@ void processStores(UserShoppingList* shoppingList){ //making process for stores
   sem_destroy(&sem);
 }
 
-void MemberShipDiscount(UserShoppingList* shoppingList){
-    int bestStore = findBestStore(shoppingList);
-    if (bestStore == -1){
-        return;
-    }
-
-    if(shoppingList->membership.buyingCount > 0){
-        for(int i = 0; i < shoppingList->productCount; i++){
-            Product* product = &shoppingList->products[bestStore][i];
-            if(product->foundFlag){
-                product->price *= (1 - discountPercentage);
-            }
-        }
-    }
-}
-
 void processUser(UserShoppingList* shoppingList){
   //semaphore
   sem_unlink(SEM_PRODUCT_SEARCH);
@@ -414,7 +436,6 @@ void processUser(UserShoppingList* shoppingList){
 
   // Process stores to find products
   processStores(shoppingList);
-
 
   int bestStore = findBestStore(shoppingList);
 
@@ -469,9 +490,6 @@ int main(){
            exit(0);
       }
   }
-
-
-
 
   printf("Exiting...\n");
   return 0;
