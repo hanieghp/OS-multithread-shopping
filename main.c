@@ -61,6 +61,15 @@ typedef struct {
   Product *product;
 } threadInput;
 
+typedef struct {
+    UserShoppingList* shoppingList;
+    int bestStore;
+    pthread_mutex_t* valuationMutex;
+    pthread_mutex_t* ratingMutex;
+    pthread_mutex_t* updateMutex;
+} ThreadManagementData;
+
+
 sem_t *g_search_sem = NULL;
 sem_t *g_result_sem = NULL;
 sem_t *g_inventory_sem = NULL;
@@ -107,22 +116,34 @@ double calculateProductValue(Product* product){
    return product->score * product->price;
 }
 
-double calculateTotalValue(Product products[], int productCount, int storeIn){
-   double totalValue = 0;
-   for(int i = 0; i < productCount; i++){
-       if(products[i].foundFlag){
-           totalValue += calculateProductValue(&products[i]);
-       }
-   }
-   return totalValue;
+void* basketValuationThread(void* args) {
+    ThreadManagementData* data = (ThreadManagementData*)args;
+    UserShoppingList* shoppingList = data->shoppingList;
+    int bestStore = data->bestStore;
+    
+    pthread_mutex_lock(data->valuationMutex);
+    
+    double totalBasketValue = 0;
+    for (int i = 0; i < shoppingList->productCount; i++) {
+        Product* product = &shoppingList->products[bestStore][i];
+        if (product->foundFlag) {
+            totalBasketValue += calculateProductValue(product) * product->entity;
+        }
+    }
+    
+    printf("tootal Basket Value: %.2f\n", totalBasketValue);
+    
+    pthread_mutex_unlock(data->valuationMutex);
+    return NULL;
 }
+
 
 int findBestStore(UserShoppingList* shoppingList){
    int bestStore = -1;
    double bestBasketValue = -1;
 
-   for(int i = 0; i < MAX_storeCount; i++){
-       double BasketValue = calculateTotalValue(shoppingList->products[i],shoppingList->productCount,i);
+   /*for(int i = 0; i < MAX_storeCount; i++){
+       double BasketValue = basketValuationThread(shoppingList->products[i],shoppingList->productCount,i);
 
        double totalCost = 0;
        for(int j = 0; j < shoppingList->productCount; j++){
@@ -136,7 +157,29 @@ int findBestStore(UserShoppingList* shoppingList){
            bestStore = i;
        }
    }
-   return bestStore;
+   return bestStore;*/
+   for (int i = 0; i < MAX_storeCount; i++) {
+        double basketValue = 0;
+        double totalCost = 0;
+
+
+        for (int j = 0; j < shoppingList->productCount; j++) {
+            Product* product = &shoppingList->products[i][j];
+            if (product->foundFlag) {
+                basketValue += calculateProductValue(product) * product->entity;
+                totalCost += product->price * product->entity;
+            }
+        }
+        printf("Store %d: Basket Value = %.2f, Total Cost = %.2f\n", i+1, basketValue, totalCost);
+
+        if (basketValue > bestBasketValue) {
+            bestBasketValue = basketValue;
+            bestStore = i;
+        }
+    }
+
+    return bestStore;
+
 }
 
 void MemberShipDiscount(UserShoppingList* shoppingList){
@@ -157,31 +200,68 @@ void MemberShipDiscount(UserShoppingList* shoppingList){
     shoppingList->membership.buyingCount[bestStore]++;
 }
 
-void* rateProductThread(void* args){
-    threadInput* input = (threadInput*)args;
-   Product* product = input->product;
-   double userRate;
-
-   printf("rate to %s product (0-5)", product->name);
-   scanf("%lf",&userRate);
-
-   product->score = (product->score + userRate) / 2.0;
-
-   char filepath[MAX_PATH_LEN];
-   snprintf(filepath, sizeof(filepath), "%s/%s.txt", input->categoryAddress, product->name);
-
-   FILE* file = fopen(filepath, "W");
-   if(file){
-    fprintf(file, "Name: %s\n", product->name);
-    fprintf(file, "Price: %s\n", product->price);
-    fprintf(file, "Score: %s\n", product->score);
-    fprintf(file, "Entity: %s\n", product->entity);
-    fprintf(file, "last modified %s\n", product->lastModified);
-    fclose(file);
-   }
-
-   return NULL;
+void* productRatingThread(void* args) {
+    ThreadManagementData* data = (ThreadManagementData*)args;
+    UserShoppingList* shoppingList = data->shoppingList;
+    int bestStore = data->bestStore;
+    
+    pthread_mutex_lock(data->ratingMutex);
+    
+    // Re-rate products
+    for (int i = 0; i < shoppingList->productCount; i++) {
+        Product* product = &shoppingList->products[bestStore][i];
+        if (product->foundFlag) {
+            double userRating;
+            printf("Rate product %s (0-5): ", product->name);
+            scanf("%lf", &userRating);
+            
+            // Update product score
+            product->score = (product->score + userRating) / 2.0;
+            
+            // Update product file with new score
+            char filepath[MAX_PATH_LEN];
+            snprintf(filepath, sizeof(filepath), "Dataset/Store%d/Category/%s.txt", 
+                     bestStore + 1, product->name);
+            
+            FILE* file = fopen(filepath, "w");
+            if (file) {
+                fprintf(file, "Name: %s\n", product->name);
+                fprintf(file, "Price: %.2f\n", product->price);
+                fprintf(file, "Score: %.2f\n", product->score);
+                fprintf(file, "Entity: %d\n", product->entity);
+                
+                time_t now;
+                time(&now);
+                char timestamp[50];
+                strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", localtime(&now));
+                fprintf(file, "Last Modified: %s\n", timestamp);
+                
+                fclose(file);
+            }
+        }
+    }
+pthread_mutex_unlock(data->ratingMutex);
+    return NULL;
 }
+
+void* productListUpdateThread(void* args) {
+    ThreadManagementData* data = (ThreadManagementData*)args;
+    UserShoppingList* shoppingList = data->shoppingList;
+    int bestStore = data->bestStore;
+    
+    pthread_mutex_lock(data->updateMutex);
+    
+    for (int i = 0; i < shoppingList->productCount; i++) {
+        Product* product = &shoppingList->products[bestStore][i];
+        if (product->foundFlag) {
+            product->price *= (1 - discountPercentage);
+        }
+    }
+    
+    pthread_mutex_unlock(data->updateMutex);
+    return NULL;
+}
+
 
 void UpdateRateProducts(UserShoppingList* shoppingList, int bestStore){
    pthread_t ratingThread[MAX_PRODUCTS];
@@ -193,7 +273,7 @@ void UpdateRateProducts(UserShoppingList* shoppingList, int bestStore){
        if(shoppingList->products[bestStore][i].foundFlag){
         char categoryPath[MAX_PATH_LEN];
         //snprintf(categoryPath, sizeof(categoryPath), "Dataset/Store%d/Category")
-        pthread_create(&ratingThread[i], NULL, rateProductThread, &shoppingList->products[bestStore][i]);
+        pthread_create(&ratingThread[i], NULL, productRatingThread, &shoppingList->products[bestStore][i]);
        }
    }
 
@@ -453,13 +533,7 @@ void processCategories(int storeNum, const char* storePath, UserShoppingList* sh
                   //printf("store %d : flag : %s", storeNum, foundProduct.foundFlag);
                   printf("found product: %s in %s\n",shoppingList->products[1][j].name, categories[i]);
                   memcpy(&(shoppingList->products[storeNum][j]), &foundProduct[j], sizeof(Product));
-                   //lock the critical secton
-                   //sem_wait(&sem);
-                   // found product ro brizim too shared memory (critical section)
-                   //unlock the critical section
-                  //break;
                }
-              //if(foundProduct.foundFlag == 1) break;
           }
            for(int j =0 ; j < shoppingList->productCount; j++){
                pthread_join(threads[j], NULL);
@@ -521,10 +595,43 @@ void processUser(UserShoppingList* shoppingList){
   int bestStore = findBestStore(shoppingList);
 
   if(bestStore != -1 && checkBudgetConstraint(shoppingList, bestStore) && checkStoreInventory(shoppingList, bestStore)){
-     printf("buying succesfull\n");
-     printf("your total cost %2.f\n", shoppingList->totalCost);
 
-     updateStoreInventory(shoppingList, bestStore);
+    pthread_mutex_t valuationMutex = PTHREAD_MUTEX_INITIALIZER;
+    pthread_mutex_t ratingMutex = PTHREAD_MUTEX_INITIALIZER;
+    pthread_mutex_t updateMutex = PTHREAD_MUTEX_INITIALIZER;
+
+    ThreadManagementData threadData = {
+            .shoppingList = shoppingList,
+            .bestStore = bestStore,
+            .valuationMutex = &valuationMutex,
+            .ratingMutex = &ratingMutex,
+            .updateMutex = &updateMutex
+        };
+
+
+    pthread_t valuationThread, ratingThread, updateThread;
+        
+    pthread_create(&valuationThread, NULL, basketValuationThread, &threadData);
+    pthread_create(&ratingThread, NULL, productRatingThread, &threadData);
+    pthread_create(&updateThread, NULL, productListUpdateThread, &threadData);
+    
+    
+    pthread_join(valuationThread, NULL);
+    pthread_join(ratingThread, NULL);
+    pthread_join(updateThread, NULL);
+    
+    
+    pthread_mutex_destroy(&valuationMutex);
+    pthread_mutex_destroy(&ratingMutex);
+    pthread_mutex_destroy(&updateMutex);
+    
+    
+    updateStoreInventory(shoppingList, bestStore);
+
+     printf("puechase succesfull\n");
+     printf("your total cost %.2f\n", shoppingList->totalCost);
+
+     //updateStoreInventory(shoppingList, bestStore);
      MemberShipDiscount(shoppingList);
   }
   else{
