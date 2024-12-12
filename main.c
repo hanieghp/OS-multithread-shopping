@@ -25,6 +25,8 @@
 
 #define SEM_PRODUCT_SEARCH "/product_search_sem"
 #define SEM_RESULT_UPDATE "/result_update_sem"
+#define SEM_INVENTORY_UPDATE "/inventory_update_sem"
+#define SEM_SHOPPING_LIST "/shopping_list_sem"
 
 typedef struct {
     char userID[MAX_NAME_LEN];
@@ -58,6 +60,11 @@ typedef struct {
   char *name;
   Product *product;
 } threadInput;
+
+sem_t *g_search_sem = NULL;
+sem_t *g_result_sem = NULL;
+sem_t *g_inventory_sem = NULL;
+sem_t *g_shopping_list_sem = NULL;
 
 //define all functions
 void processCategories(int storeNum, const char* storePath, UserShoppingList* shoppingList);
@@ -296,9 +303,8 @@ char** getSubDirectories(const char *dir){
 }
 
 void* searchProductInCategory(void* args){
-  //return NULL;
-  // neeed to implement
-  //printf("in thread\n");
+    sem_wait(g_search_sem);
+
   DIR *dir;
   struct dirent *entry;
   char categoryPath[MAX_PATH_LEN], command[1000];
@@ -317,6 +323,9 @@ void* searchProductInCategory(void* args){
        filepath[strcspn(filepath, "\n")] = 0;
        Product* product = readProductFromFile(filepath);
        if (product && strcasecmp(product->name, input->name) == 0){
+
+           sem_wait(g_result_sem);
+
            printf("i found it in %s!!!!\n", filepath);
            memcpy(input->product->name, product->name, sizeof(product->name));
            memcpy(input->product->lastModified, product->lastModified, sizeof(product->lastModified));
@@ -324,12 +333,18 @@ void* searchProductInCategory(void* args){
            input->product->score = product->score;
            input->product->entity = product->entity;
            input->product->foundFlag = 1;
+
+           sem_post(g_result_sem);
+
            pclose(fp);
+           sem_post(g_search_sem);
            return NULL;  
        }
+       free(product);
    }
    printf("i finished the files????\n");            
    pclose(fp);
+   sem_post(g_search_sem);
    return NULL;
 }
 
@@ -372,6 +387,9 @@ int checkBudgetConstraint(UserShoppingList* shoppingList, int bestStore) {
 }
 
 void updateStoreInventory(UserShoppingList* shoppingList, int bestStore) {
+
+    sem_wait(g_inventory_sem);
+
     char specificStorePath[MAX_PATH_LEN];
     FILE* inventoryFile;
     time_t now;
@@ -406,6 +424,7 @@ void updateStoreInventory(UserShoppingList* shoppingList, int bestStore) {
             }
         }
     }
+    sem_post(g_inventory_sem);
 }
 
 void processCategories(int storeNum, const char* storePath, UserShoppingList* shoppingList){//making process for categories
@@ -482,14 +501,19 @@ void processStores(UserShoppingList* shoppingList){ //making process for stores
 
 void processUser(UserShoppingList* shoppingList){
   //semaphore
-  sem_unlink(SEM_PRODUCT_SEARCH);
-  sem_unlink(SEM_RESULT_UPDATE);
-   sem_t* search_sem = sem_open(SEM_PRODUCT_SEARCH, O_CREAT, 0644, 1);
-  sem_t* result_sem = sem_open(SEM_RESULT_UPDATE, O_CREAT, 0644, 1);
-   if (search_sem == SEM_FAILED || result_sem == SEM_FAILED) {
-      perror("Semaphore creation failed");
-      return;
-  }
+    g_search_sem = sem_open(SEM_PRODUCT_SEARCH, O_CREAT, 0644, 1);
+    g_result_sem = sem_open(SEM_RESULT_UPDATE, O_CREAT, 0644, 1);
+    g_inventory_sem = sem_open(SEM_INVENTORY_UPDATE, O_CREAT, 0644, 1);
+    g_shopping_list_sem = sem_open(SEM_SHOPPING_LIST, O_CREAT, 0644, 1);
+
+
+    if (g_search_sem == SEM_FAILED || g_result_sem == SEM_FAILED || 
+        g_inventory_sem == SEM_FAILED || g_shopping_list_sem == SEM_FAILED) {
+        perror("Semaphore creation failed");
+        return;
+    }
+
+    sem_wait(g_shopping_list_sem);
 
   // Process stores to find products
   processStores(shoppingList);
@@ -506,6 +530,8 @@ void processUser(UserShoppingList* shoppingList){
   else{
     printf("you can't buy");
   }
+
+  sem_post(g_shopping_list_sem);
   
   // Print processed products
    printf("\nProcessed Shopping List for User %s:\n", shoppingList->userID);
@@ -533,10 +559,18 @@ void processUser(UserShoppingList* shoppingList){
    if(bestStore != -1){
        printf("best store is: %d\n",bestStore+1);
    }
-  sem_close(search_sem);
-  sem_close(result_sem);
-  sem_unlink(SEM_PRODUCT_SEARCH);
-  sem_unlink(SEM_RESULT_UPDATE);
+
+    sem_close(g_search_sem);
+    sem_close(g_result_sem);
+    sem_close(g_inventory_sem);
+    sem_close(g_shopping_list_sem);
+
+
+    sem_unlink(SEM_PRODUCT_SEARCH);
+    sem_unlink(SEM_RESULT_UPDATE);
+    sem_unlink(SEM_INVENTORY_UPDATE);
+    sem_unlink(SEM_SHOPPING_LIST);
+
 }
 
 int main(){
@@ -551,8 +585,6 @@ int main(){
            pthread_t threads[MAX_storeCount];
            UserShoppingList* shoppingList = read_user_shopping_list();
            processUser(shoppingList);
-               // show user its choices
-           //pthread_create(&threads[1], NULL, &getProductsValue, shoppingList->products);
            free(shoppingList);
            exit(0);
       }
