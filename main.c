@@ -334,7 +334,7 @@ void* searchProductInCategory(void* args){
 
 int checkStoreInventory(UserShoppingList* shoppingList, int bestStore){
     for(int i = 0; i < shoppingList->productCount; i++){
-        Product* Product = &shoppingList->products[bestStore][i];
+        Product* product = &shoppingList->products[bestStore][i];
 
         if(!product->foundFlag){
             printf("not found in store %s", shoppingList->products[1][i].name);
@@ -343,7 +343,7 @@ int checkStoreInventory(UserShoppingList* shoppingList, int bestStore){
 
         if(product->entity < shoppingList->products[1][i].entity){
             printf("there isn't enought %s product", product->name);
-            printf("There is in store %d", shoppingList->products[1][i].entity, Product->entity);
+            printf("There is in store %d", shoppingList->products[1][i].entity, product->entity);
             return 0;
         }
     }
@@ -370,7 +370,31 @@ int checkBudgetConstraint(UserShoppingList* shoppingList, int bestStore) {
     return 1;
 }
 
-
+void updateStoreInventory(UserShoppingList* shoppingList, int bestStore) { // need to be better
+    char inventoryFilePath[MAX_PATH_LEN];
+    FILE* inventoryFile;
+    
+    for (int i = 0; i < shoppingList->productCount; i++) {
+        Product* product = &shoppingList->products[bestStore][i];
+        if (product->foundFlag) {
+            product->entity -= shoppingList->products[1][i].entity;
+            
+            snprintf(inventoryFilePath, sizeof(inventoryFilePath), 
+                     "Dataset/Store%d/%s/product_%s.txt", 
+                     bestStore + 1, product->name, product->name);
+            
+            inventoryFile = fopen(inventoryFilePath, "w");
+            if (inventoryFile) {
+                fprintf(inventoryFile, "Name: %s\n", product->name);
+                fprintf(inventoryFile, "Price: %.2f\n", product->price);
+                fprintf(inventoryFile, "Score: %.2f\n", product->score);
+                fprintf(inventoryFile, "Entity: %d\n", product->entity);
+                fprintf(inventoryFile, "Last Modified: %s\n", product->lastModified);
+                fclose(inventoryFile);
+            }
+        }
+    }
+}
 
 void processCategories(int storeNum, const char* storePath, UserShoppingList* shoppingList){//making process for categories
   char** categories = getSubDirectories(storePath);
