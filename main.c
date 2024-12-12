@@ -1,3 +1,5 @@
+// indexing , reading from file, updating file after purchase, semaphore, thread handling, calculating part
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
