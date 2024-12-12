@@ -14,30 +14,22 @@
 #include <bits/pthreadtypes.h>
 #include <ctype.h>
 
-
-
-
 #define MAX_PRODUCTS 80
 #define MAX_NAME_LEN 100
 #define MAX_PATH_LEN 200
 #define MAX_storeCount 3
 #define categoryCount 8
 #define maxUser 10
-#define discount 0.1 // 10%
-
-
-
+#define discountPercentage 0.1 // 10%
 
 #define SEM_PRODUCT_SEARCH "/product_search_sem"
 #define SEM_RESULT_UPDATE "/result_update_sem"
 
-
-
-
-#define SHM_KEY 0x1234
-
-
-
+typedef struct {
+    char userID[MAX_NAME_LEN];
+    int buyingCount[MAX_storeCount];
+    int hasDiscount[MAX_storeCount];
+} UserMembership;
 
 typedef struct {
   char name[MAX_NAME_LEN];
@@ -48,9 +40,6 @@ typedef struct {
   int foundFlag; //to check if product is found
 } Product;
 
-
-
-
 typedef struct {
   char userID[MAX_NAME_LEN];
   Product products[MAX_storeCount][MAX_PRODUCTS];
@@ -60,8 +49,8 @@ typedef struct {
   int store_match_count[MAX_storeCount];
   pid_t userPID;
   int processingComplete;
+  UserMembership membership;
 } UserShoppingList;
-
 
 typedef struct {
   char *categoryAddress;
@@ -69,16 +58,10 @@ typedef struct {
   Product *product;
 } threadInput;
 
-
-
-
 //define all functions
 void processCategories(int storeNum, const char* storePath, UserShoppingList* shoppingList);
 void processStroes(UserShoppingList* shoppingList);
 void processUser(UserShoppingList* shoppingList);
-
-
-
 
 Product* readProductFromFile(const char* filepath) {
   FILE* file = fopen(filepath, "r");
@@ -86,11 +69,9 @@ Product* readProductFromFile(const char* filepath) {
       return NULL;
   }
 
-
   Product* product = malloc(sizeof(Product));
   memset(product, 0, sizeof(Product));
   char line[200];
-
 
   while (fgets(line, sizeof(line), file)) {
       if (strncmp(line, "Name:", 5) == 0) {
@@ -106,12 +87,10 @@ Product* readProductFromFile(const char* filepath) {
       }
   }
 
-
   fclose(file);
   product->foundFlag = 0;
   return product;
 }
-
 
 double calculateProductValue(Product* product){
    if(product->price <= 0){
@@ -119,7 +98,6 @@ double calculateProductValue(Product* product){
    }
    return product->score * product->price;
 }
-
 
 double calculateTotalValue(Product products[], int productCount, int storeIn){
    double totalValue = 0;
@@ -131,15 +109,12 @@ double calculateTotalValue(Product products[], int productCount, int storeIn){
    return totalValue;
 }
 
-
 int findBestStore(UserShoppingList* shoppingList){
    int bestStore = -1;
    double bestBasketValue = -1;
 
-
    for(int i = 0; i < MAX_storeCount; i++){
        double BasketValue = calculateTotalValue(shoppingList->products[i],shoppingList->productCount,i);
-
 
        double totalCost = 0;
        for(int j = 0; j < shoppingList->productCount; j++){
@@ -148,33 +123,25 @@ int findBestStore(UserShoppingList* shoppingList){
            }
        }
 
-
        if(BasketValue > bestBasketValue){
            bestBasketValue = BasketValue;
            bestStore = i;
        }
    }
-
-
    return bestStore;
 }
-
 
 void* rateProductThread(void* args){
    Product* product = (Product*)args;
    double userRate;
 
-
    printf("rate to %s product (0-5)", product->name);
    scanf("%lf",&userRate);
 
-
    product->score = (product->score + userRate) / 2.0;
-
 
    return NULL;
 }
-
 
 void rateProducts(UserShoppingList* shoppingList, int bestStore){
    pthread_t ratingThread[MAX_PRODUCTS];
@@ -184,21 +151,18 @@ void rateProducts(UserShoppingList* shoppingList, int bestStore){
 
 
    for(int i = 0; i < shoppingList->productCount; i++){
-       if(shoppingList-<products[bestStore][i].foundFlag){
+       if(shoppingList->products[bestStore][i].foundFlag){
            pthread_create(&ratingThread[i], NULL, rateProductThread, &shoppingList->products[bestStore][i]);
        }
    }
 
 
    for(int i = 0; i < shoppingList->productCount; i++){
-       if(shoppingList-<products[bestStore][i].foundFlag){
+       if(shoppingList->products[bestStore][i].foundFlag){
            pthread_join(ratingThread[i], NULL);
        }
    }
 }
-
-
-
 
 UserShoppingList* read_user_shopping_list() {
   UserShoppingList* shoppingList = malloc(sizeof(UserShoppingList));
@@ -260,9 +224,6 @@ void listCategoryProducts(const char* categoryPath) {
   closedir(dir);
 }
 
-
-
-
 // Function to list all products in a store
 void listStoreProducts(const char* storePath) {
   DIR* dir;
@@ -290,32 +251,6 @@ void listStoreProducts(const char* storePath) {
   }
   closedir(dir);
 }
-
-
-/*int initializeSharedMemory() {
-  int shmid = shmget(SHM_KEY, sizeof(SharedMemoryData), IPC_CREAT | 0666);
-  if (shmid == -1) {
-      perror("shmget failed");
-      return -1;
-  }
-
-
-
-
-  sharedData = (SharedMemoryData*)shmat(shmid, NULL, 0);
-  if (sharedData == (void*) -1) {
-      perror("shmat failed");
-      return -1;
-  }
-
-
-
-
-  // Initialize shared memory
-  memset(sharedData, 0, sizeof(SharedMemoryData));
-  return shmid;
-}*/
-
 
 char** getSubDirectories(const char *dir){
   int count = 0;
@@ -450,8 +385,21 @@ void processStores(UserShoppingList* shoppingList){ //making process for stores
   sem_destroy(&sem);
 }
 
+void MemberShipDiscount(UserShoppingList* shoppingList){
+    int bestStore = findBestStore(shoppingList);
+    if (bestStore == -1){
+        return;
+    }
 
-
+    if(shoppingList->membership.buyingCount > 0){
+        for(int i = 0; i < shoppingList->productCount; i++){
+            Product* product = &shoppingList->products[bestStore][i];
+            if(product->foundFlag){
+                product->price *= (1 - discountPercentage);
+            }
+        }
+    }
+}
 
 void processUser(UserShoppingList* shoppingList){
   //semaphore
@@ -464,18 +412,13 @@ void processUser(UserShoppingList* shoppingList){
       return;
   }
 
-
-
-
   // Process stores to find products
   processStores(shoppingList);
 
 
   int bestStore = findBestStore(shoppingList);
 
-
-
-
+  MemberShipDiscount(shoppingList);
   // Print processed products
    printf("\nProcessed Shopping List for User %s:\n", shoppingList->userID);
    for (int i = 0; i < shoppingList->productCount; i++) {
@@ -502,43 +445,15 @@ void processUser(UserShoppingList* shoppingList){
    if(bestStore != -1){
        printf("best store is: %d\n",bestStore+1);
    }
-
-
-
-
   sem_close(search_sem);
   sem_close(result_sem);
   sem_unlink(SEM_PRODUCT_SEARCH);
   sem_unlink(SEM_RESULT_UPDATE);
-
-
-
-
 }
-
-
-int getValue (int price, int score) {
-   return score/price;
-}
-
-
-int getValueOfStore(Product products[]){
-   int value = 0;
-   for (int i = 0; i < sizeof(products)/sizeof(products[0]); i++){
-       value+=getValue(products[i].price, products[i].score);
-   }
-   return value;
-}
-
 
 int main(){
-
-
   while (1) {
       pid_t pidUser = vfork(); //process user
-
-
-
 
       if(pidUser < 0){
           perror("Failed to fork for User\n");
