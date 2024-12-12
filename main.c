@@ -350,6 +350,27 @@ int checkStoreInventory(UserShoppingList* shoppingList, int bestStore){
     return 1;
 }
 
+int checkBudgetConstraint(UserShoppingList* shoppingList, int bestStore) {
+    double totalCost = 0;
+    
+    for (int i = 0; i < shoppingList->productCount; i++) {
+        Product* product = &shoppingList->products[bestStore][i];
+        if (product->foundFlag) {
+            totalCost += product->price * shoppingList->products[1][i].entity;
+        }
+    }
+    
+    if (shoppingList->budgetCap > 0 && totalCost > shoppingList->budgetCap) {
+        printf("total cost: %.2f, your budgetCap: %.2f\n", totalCost, shoppingList->budgetCap);
+        printf("you can't buy\n");
+        return 0;
+    }
+    
+    shoppingList->totalCost = totalCost;
+    return 1;
+}
+
+
 
 void processCategories(int storeNum, const char* storePath, UserShoppingList* shoppingList){//making process for categories
   char** categories = getSubDirectories(storePath);
