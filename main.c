@@ -13,6 +13,7 @@
 #include <sys/wait.h>
 #include <bits/pthreadtypes.h>
 #include <ctype.h>
+#include <time.h>
 
 #define MAX_PRODUCTS 80
 #define MAX_NAME_LEN 100
@@ -297,7 +298,7 @@ char** getSubDirectories(const char *dir){
 void* searchProductInCategory(void* args){
   //return NULL;
   // neeed to implement
-  printf("in thread\n");
+  //printf("in thread\n");
   DIR *dir;
   struct dirent *entry;
   char categoryPath[MAX_PATH_LEN], command[1000];
@@ -337,13 +338,13 @@ int checkStoreInventory(UserShoppingList* shoppingList, int bestStore){
         Product* product = &shoppingList->products[bestStore][i];
 
         if(!product->foundFlag){
-            printf("not found in store %s", shoppingList->products[1][i].name);
+            printf("not found in store %s", shoppingList->products[bestStore][i].name);
             return 0;
         }
 
-        if(product->entity < shoppingList->products[1][i].entity){
+        if(product->entity < shoppingList->products[bestStore][i].entity){
             printf("there isn't enought %s product", product->name);
-            printf("There is in store %d", shoppingList->products[1][i].entity, product->entity);
+            printf("There is in store %d", shoppingList->products[bestStore][i].entity, product->entity);
             return 0;
         }
     }
@@ -370,27 +371,38 @@ int checkBudgetConstraint(UserShoppingList* shoppingList, int bestStore) {
     return 1;
 }
 
-void updateStoreInventory(UserShoppingList* shoppingList, int bestStore) { // need to be better
-    char inventoryFilePath[MAX_PATH_LEN];
+void updateStoreInventory(UserShoppingList* shoppingList, int bestStore) {
+    char specificStorePath[MAX_PATH_LEN];
     FILE* inventoryFile;
-    
+    time_t now;
+    time(&now);
+    char timestamp[50];
+    strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", localtime(&now));
+
+
     for (int i = 0; i < shoppingList->productCount; i++) {
         Product* product = &shoppingList->products[bestStore][i];
         if (product->foundFlag) {
             product->entity -= shoppingList->products[1][i].entity;
-            
-            snprintf(inventoryFilePath, sizeof(inventoryFilePath), 
-                     "Dataset/Store%d/%s/product_%s.txt", 
+            snprintf(specificStorePath, sizeof(specificStorePath), 
+                     "Dataset/Store%d/%s/%s.txt", 
                      bestStore + 1, product->name, product->name);
-            
-            inventoryFile = fopen(inventoryFilePath, "w");
+
+
+            inventoryFile = fopen(specificStorePath, "w");
             if (inventoryFile) {
                 fprintf(inventoryFile, "Name: %s\n", product->name);
                 fprintf(inventoryFile, "Price: %.2f\n", product->price);
                 fprintf(inventoryFile, "Score: %.2f\n", product->score);
                 fprintf(inventoryFile, "Entity: %d\n", product->entity);
-                fprintf(inventoryFile, "Last Modified: %s\n", product->lastModified);
+                fprintf(inventoryFile, "Last Modified: %s\n", timestamp);
+                
+                strcpy(product->lastModified, timestamp);
+                
                 fclose(inventoryFile);
+                printf("updated inventory for %s in Store %d\n", product->name, bestStore + 1);
+            } else {
+                printf("couldn't open file %s for updating\n", specificStorePath);
             }
         }
     }
@@ -494,7 +506,6 @@ void processUser(UserShoppingList* shoppingList){
   else{
     printf("you can't buy");
   }
-
   
   // Print processed products
    printf("\nProcessed Shopping List for User %s:\n", shoppingList->userID);
