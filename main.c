@@ -111,11 +111,92 @@ Product* readProductFromFile(const char* filepath) {
   return product;
 }
 
+// Function to list all products in a category
+void listCategoryProducts(const char* categoryPath) {
+  DIR* dir;
+  struct dirent* entry;
+
+  dir = opendir(categoryPath);
+  if (dir == NULL) {
+      printf("Unable to open category dddirectory: %s\n", categoryPath);
+      return;
+  }
+  printf("Products in category: %s\n", categoryPath);
+  while ((entry = readdir(dir)) != NULL) {
+      if (entry->d_type == DT_REG) {  // If it's a regular file
+          char filepath[MAX_PATH_LEN];
+          snprintf(filepath, sizeof(filepath), "%s/%s", categoryPath, entry->d_name);
+          Product* product = readProductFromFile(filepath);
+          if (product) {
+              printf("- %s (Price: %.2f, Score: %.2f, Quantity: %d)\n",
+                     product->name, product->price, product->score, product->entity);
+              free(product);
+          }
+      }
+  }
+  closedir(dir);
+}
+
+// Function to list all products in a store
+void listStoreProducts(const char* storePath) {
+  DIR* dir;
+  struct dirent* entry;
+  dir = opendir(storePath);
+  if (dir == NULL) {
+      printf("Uunable to open store directory: %s\n", storePath);
+      return;
+  }
+
+  printf("Listing products for store: %s\n", storePath);
+
+  while ((entry = readdir(dir)) != NULL) {
+      if (entry->d_type == DT_DIR &&
+          strcmp(entry->d_name, ".") != 0 &&
+          strcmp(entry->d_name, "..") != 0) {  // If it's a subdirectory (category)
+          char categoryPath[MAX_PATH_LEN];
+          snprintf(categoryPath, sizeof(categoryPath), "%s/%s", storePath, entry->d_name);
+          listCategoryProducts(categoryPath);
+      }
+  }
+  closedir(dir);
+}
+
+char** getSubDirectories(const char *dir){
+  int count = 0;
+  char **categories = malloc(sizeof(char *) * 1000);     
+  char subDir[MAX_PATH_LEN], command[MAX_NAME_LEN];
+  snprintf(command, sizeof(command), "find %s -maxdepth 1 -type d", dir);
+  FILE *fp = popen((command), "r");
+   if (!fp) {
+      perror("Error opening files");
+      if (fp) fclose(fp);
+      return NULL;
+  }
+  fgets(subDir, sizeof(subDir), fp);
+  while(fgets(subDir, sizeof(subDir), fp)!=NULL){
+      categories[count] = strdup(subDir);
+      count++;               
+  }
+  pclose(fp);
+  return categories;
+}
+
 double calculateProductValue(Product* product){
    if(product->price <= 0){
        return 0;
    }
    return product->score * product->price;
+}
+
+double calculateTotalCost(UserShoppingList* shoppingList, int store){
+    double totalCost = 0;
+    for(int i = 0;i < shoppingList->productCount; i++){
+        Product* product = &shoppingList->products[store][i];
+        if(product->foundFlag){
+            totalCost += product->price * product->entity;
+        }
+    }
+    return totalCost;
 }
 
 void* basketValuationThread(void* args) {
@@ -142,46 +223,31 @@ void* basketValuationThread(void* args) {
 
 int findBestStore(UserShoppingList* shoppingList){
    int bestStore = -1;
-   double bestBasketValue = -1;
+   double bestStoreValue = -1;
 
-   /*for(int i = 0; i < MAX_storeCount; i++){
-       double BasketValue = basketValuationThread(shoppingList->products[i],shoppingList->productCount,i);
-
-       double totalCost = 0;
-       for(int j = 0; j < shoppingList->productCount; j++){
-           if(shoppingList->products[i][j].foundFlag){
-               totalCost += shoppingList->products[i][j].price * shoppingList->products[i][j].entity;
-           }
-       }
-
-       if(BasketValue > bestBasketValue){
-           bestBasketValue = BasketValue;
-           bestStore = i;
-       }
-   }
-   return bestStore;*/
    for (int i = 0; i < MAX_storeCount; i++) {
-        double basketValue = 0;
-        double totalCost = 0;
-
+        double basketStoreValue = 0;
+        int allProductFound = 1;
 
         for (int j = 0; j < shoppingList->productCount; j++) {
             Product* product = &shoppingList->products[i][j];
-            if (product->foundFlag) {
-                basketValue += calculateProductValue(product) * product->entity;
-                totalCost += product->price * product->entity;
-            }
-        }
-        printf("Store %d: Basket Value = %.2f, Total Cost = %.2f\n", i+1, basketValue, totalCost);
 
-        if (basketValue > bestBasketValue) {
-            bestBasketValue = basketValue;
-            bestStore = i;
+            if (!product->foundFlag) {
+                allProductFound = 0;
+                break;
+            }
+            basketStoreValue += calculateProductValue(product) * product->entity; 
         }
+        if(allProductFound && basketStoreValue > bestStoreValue){
+            bestStoreValue = basketStoreValue;
+            bestStore = i;
+            break;
+        }
+        
+        printf("Store %d: Basket Value = %.2f\n", i+1, basketValue);
     }
 
     return bestStore;
-
 }
 
 void MemberShipDiscount(UserShoppingList* shoppingList){
@@ -314,76 +380,6 @@ UserShoppingList* read_user_shopping_list() {
   return shoppingList;
 }
 
-// Function to list all products in a category
-void listCategoryProducts(const char* categoryPath) {
-  DIR* dir;
-  struct dirent* entry;
-
-  dir = opendir(categoryPath);
-  if (dir == NULL) {
-      printf("Unable to open category dddirectory: %s\n", categoryPath);
-      return;
-  }
-  printf("Products in category: %s\n", categoryPath);
-  while ((entry = readdir(dir)) != NULL) {
-      if (entry->d_type == DT_REG) {  // If it's a regular file
-          char filepath[MAX_PATH_LEN];
-          snprintf(filepath, sizeof(filepath), "%s/%s", categoryPath, entry->d_name);
-          Product* product = readProductFromFile(filepath);
-          if (product) {
-              printf("- %s (Price: %.2f, Score: %.2f, Quantity: %d)\n",
-                     product->name, product->price, product->score, product->entity);
-              free(product);
-          }
-      }
-  }
-  closedir(dir);
-}
-
-// Function to list all products in a store
-void listStoreProducts(const char* storePath) {
-  DIR* dir;
-  struct dirent* entry;
-  dir = opendir(storePath);
-  if (dir == NULL) {
-      printf("Uunable to open store directory: %s\n", storePath);
-      return;
-  }
-
-  printf("Listing products for store: %s\n", storePath);
-
-  while ((entry = readdir(dir)) != NULL) {
-      if (entry->d_type == DT_DIR &&
-          strcmp(entry->d_name, ".") != 0 &&
-          strcmp(entry->d_name, "..") != 0) {  // If it's a subdirectory (category)
-          char categoryPath[MAX_PATH_LEN];
-          snprintf(categoryPath, sizeof(categoryPath), "%s/%s", storePath, entry->d_name);
-          listCategoryProducts(categoryPath);
-      }
-  }
-  closedir(dir);
-}
-
-char** getSubDirectories(const char *dir){
-  int count = 0;
-  char **categories = malloc(sizeof(char *) * 1000);     
-  char subDir[MAX_PATH_LEN], command[MAX_NAME_LEN];
-  snprintf(command, sizeof(command), "find %s -maxdepth 1 -type d", dir);
-  FILE *fp = popen((command), "r");
-   if (!fp) {
-      perror("Error opening files");
-      if (fp) fclose(fp);
-      return NULL;
-  }
-  fgets(subDir, sizeof(subDir), fp);
-  while(fgets(subDir, sizeof(subDir), fp)!=NULL){
-      categories[count] = strdup(subDir);
-      count++;               
-  }
-  pclose(fp);
-  return categories;
-}
-
 void* searchProductInCategory(void* args){
     sem_wait(g_search_sem);
 
@@ -454,7 +450,7 @@ int checkBudgetConstraint(UserShoppingList* shoppingList, int bestStore) {
     for (int i = 0; i < shoppingList->productCount; i++) {
         Product* product = &shoppingList->products[bestStore][i];
         if (product->foundFlag) {
-            totalCost += product->price * shoppingList->products[1][i].entity;
+            totalCost += product->price * product->entity;
         }
     }
     
@@ -469,7 +465,6 @@ int checkBudgetConstraint(UserShoppingList* shoppingList, int bestStore) {
 }
 
 void updateStoreInventory(UserShoppingList* shoppingList, int bestStore) {
-
     sem_wait(g_inventory_sem);
 
     char specificStorePath[MAX_PATH_LEN];
@@ -483,27 +478,28 @@ void updateStoreInventory(UserShoppingList* shoppingList, int bestStore) {
     for (int i = 0; i < shoppingList->productCount; i++) {
         Product* product = &shoppingList->products[bestStore][i];
         if (product->foundFlag) {
-            product->entity -= shoppingList->products[1][i].entity;
-            snprintf(specificStorePath, sizeof(specificStorePath), 
-                     "Dataset/Store%d/%s/%s.txt", 
-                     bestStore + 1, product->name, product->name);
+            if(product->entity >= shoppingList->products[bestStore][i].entity)
+                product->entity -= shoppingList->products[bestStore][i].entity;
+                snprintf(specificStorePath, sizeof(specificStorePath), 
+                        "Dataset/Store%d/%s/%s.txt", 
+                        bestStore + 1, product->name, product->name);
 
 
-            inventoryFile = fopen(specificStorePath, "w");
-            if (inventoryFile) {
-                fprintf(inventoryFile, "Name: %s\n", product->name);
-                fprintf(inventoryFile, "Price: %.2f\n", product->price);
-                fprintf(inventoryFile, "Score: %.2f\n", product->score);
-                fprintf(inventoryFile, "Entity: %d\n", product->entity);
-                fprintf(inventoryFile, "Last Modified: %s\n", timestamp);
-                
-                strcpy(product->lastModified, timestamp);
-                
-                fclose(inventoryFile);
-                printf("updated inventory for %s in Store %d\n", product->name, bestStore + 1);
-            } else {
-                printf("couldn't open file %s for updating\n", specificStorePath);
-            }
+                inventoryFile = fopen(specificStorePath, "w");
+                if (inventoryFile) {
+                    fprintf(inventoryFile, "Name: %s\n", product->name);
+                    fprintf(inventoryFile, "Price: %.2f\n", product->price);
+                    fprintf(inventoryFile, "Score: %.2f\n", product->score);
+                    fprintf(inventoryFile, "Entity: %d\n", product->entity);
+                    fprintf(inventoryFile, "Last Modified: %s\n", timestamp);
+                    
+                    strcpy(product->lastModified, timestamp);
+                    
+                    fclose(inventoryFile);
+                    printf("updated inventory for %s in Store %d\n", product->name, bestStore + 1);
+                } else {
+                    printf("couldn't open file %s for updating\n", specificStorePath);
+                }
         }
     }
     sem_post(g_inventory_sem);
