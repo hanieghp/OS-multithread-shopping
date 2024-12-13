@@ -185,6 +185,7 @@ double calculateProductValue(Product* product){
    if(product->price <= 0){
        return 0;
    }
+   printf("score is: %f and price is %f",product->score, product->price);
    return product->score * product->price;
 }
 
@@ -193,7 +194,8 @@ double calculateTotalCost(UserShoppingList* shoppingList, int store){
     for(int i = 0;i < shoppingList->productCount; i++){
         Product* product = &shoppingList->products[store][i];
         if(product->foundFlag){
-            printf("price is %d and entity : %d\n",product->price, product->entity);
+            int productQuantity = product->entity;
+            printf("price is %f and entity : %d\n",product->price, product->entity);
             totalCost += product->price * product->entity;
         }
     }
@@ -364,20 +366,29 @@ UserShoppingList* read_user_shopping_list() {
    printf("the number : %d\n", shoppingList->productCount);
   printf("Order list: \n");
   for (int i = 0; i < shoppingList->productCount; i++) {
+      char tempName[MAX_NAME_LEN];
+      int tempQuantity;
       printf("Product %d Name: ", i + 1);
-      scanf("%99s", shoppingList->products[1][i].name);
-      //scanf("%99s", shoppingList->products[2][i].name);
-      //scanf("%99s", shoppingList->products[3][i].name);
+      scanf("%99s", tempName);
+      //scanf("%99s", &shoppingList->products[2][i].name);
+      //scanf("%99s", &shoppingList->products[3][i].name);
       printf("Product %d Quantity: ", i + 1);
-      scanf("%d", &shoppingList->products[1][i].entity);
+      scanf("%d", &tempQuantity);
+
+      for(int j = 0; j < 3; j++){
+        strncpy(shoppingList->products[j][i].name, tempName, sizeof(tempName));
+        shoppingList->products[j][i].entity = tempQuantity;
+        //printf("name: %s entity: %d",tempName,tempQuantity);
+      }
       //scanf("%d", &shoppingList->products[2][i].entity);
       //scanf("%d", &shoppingList->products[3][i].entity);
   }
   printf("Enter Budget Cap (-1 for no cap): ");
   scanf("%lf", &shoppingList->budgetCap);
 
-
+  printf("befor pid");
   shoppingList->userPID = getpid();
+  printf("pid: ",getpid());
   return shoppingList;
 }
 
@@ -408,9 +419,9 @@ void* searchProductInCategory(void* args){
            printf("i found it in %s!!!!\n", filepath);
            memcpy(input->product->name, product->name, sizeof(product->name));
            memcpy(input->product->lastModified, product->lastModified, sizeof(product->lastModified));
-           memcpy(input->product->price, product->price, sizeof(product->price));
-           memcpy(input->product->score, product->score, sizeof(product->score));
-           memcpy(input->product->entity, product->entity, sizeof(product->entity));
+           input->product->price = product->price;
+           input->product->score = product->score;
+           input->product->entity = product->entity;
            input->product->foundFlag = 1;
 
            sem_post(g_result_sem);
@@ -570,6 +581,7 @@ void processStores(UserShoppingList* shoppingList){ //making process for stores
 }
 
 void processUser(UserShoppingList* shoppingList){
+    printf("k");
   //semaphore
     g_search_sem = sem_open(SEM_PRODUCT_SEARCH, O_CREAT, 0644, 1);
     g_result_sem = sem_open(SEM_RESULT_UPDATE, O_CREAT, 0644, 1);
@@ -582,10 +594,11 @@ void processUser(UserShoppingList* shoppingList){
         perror("Semaphore creation failed");
         return;
     }
-
+    printf("khkh");
     sem_wait(g_shopping_list_sem);
 
   // Process stores to find products
+  printf("kh");
   processStores(shoppingList);
 
   int bestStore = findBestStore(shoppingList);
@@ -676,7 +689,7 @@ void processUser(UserShoppingList* shoppingList){
 }
 
 int main(){
-    printf("hey");
+    printf("hey\n");
     while (1) {
       pid_t pidUser = vfork(); //process user
 
@@ -687,6 +700,7 @@ int main(){
       else if(pidUser == 0){
            pthread_t threads[MAX_storeCount];
            UserShoppingList* shoppingList = read_user_shopping_list();
+           printf("befor user process");
            processUser(shoppingList);
            free(shoppingList);
            exit(0);
