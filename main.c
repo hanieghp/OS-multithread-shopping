@@ -193,6 +193,7 @@ double calculateTotalCost(UserShoppingList* shoppingList, int store){
     for(int i = 0;i < shoppingList->productCount; i++){
         Product* product = &shoppingList->products[store][i];
         if(product->foundFlag){
+            printf("price is %d and entity : %d\n",product->price, product->entity);
             totalCost += product->price * product->entity;
         }
     }
@@ -244,7 +245,7 @@ int findBestStore(UserShoppingList* shoppingList){
             break;
         }
         
-        printf("Store %d: Basket Value = %.2f\n", i+1, basketValue);
+        printf("Store %d: Basket Value = %.2f\n", i+1, bestStoreValue);
     }
 
     return bestStore;
@@ -407,9 +408,9 @@ void* searchProductInCategory(void* args){
            printf("i found it in %s!!!!\n", filepath);
            memcpy(input->product->name, product->name, sizeof(product->name));
            memcpy(input->product->lastModified, product->lastModified, sizeof(product->lastModified));
-           input->product->price = product->price;
-           input->product->score = product->score;
-           input->product->entity = product->entity;
+           memcpy(input->product->price, product->price, sizeof(product->price));
+           memcpy(input->product->score, product->score, sizeof(product->score));
+           memcpy(input->product->entity, product->entity, sizeof(product->entity));
            input->product->foundFlag = 1;
 
            sem_post(g_result_sem);
@@ -420,7 +421,7 @@ void* searchProductInCategory(void* args){
        }
        free(product);
    }
-   printf("i finished the files????\n");            
+   //printf("i finished the files????\n");            
    pclose(fp);
    sem_post(g_search_sem);
    return NULL;
@@ -445,18 +446,15 @@ int checkStoreInventory(UserShoppingList* shoppingList, int bestStore){
 }
 
 int checkBudgetConstraint(UserShoppingList* shoppingList, int bestStore) {
-    double totalCost = 0;
-    
-    for (int i = 0; i < shoppingList->productCount; i++) {
-        Product* product = &shoppingList->products[bestStore][i];
-        if (product->foundFlag) {
-            totalCost += product->price * product->entity;
-        }
-    }
+    double totalCost = calculateTotalCost(shoppingList, bestStore);
     
     if (shoppingList->budgetCap > 0 && totalCost > shoppingList->budgetCap) {
         printf("total cost: %.2f, your budgetCap: %.2f\n", totalCost, shoppingList->budgetCap);
         printf("you can't buy\n");
+        return 0;
+    }
+    else{
+        printf("total cost: %.2f\n", totalCost);
         return 0;
     }
     
@@ -514,7 +512,7 @@ void processCategories(int storeNum, const char* storePath, UserShoppingList* sh
        int totalCost = 0;
        pid_t pidCategory = vfork();
        if(pidCategory == 0){
-          printf("processing category: %s\n",categories[i]);
+          //printf("processing category: %s\n",categories[i]);
            int proCount = shoppingList->productCount;
            //Product foundProduct[shoppingList->productCount];
            for(int j = 0; j < proCount; j++){
@@ -523,13 +521,13 @@ void processCategories(int storeNum, const char* storePath, UserShoppingList* sh
                Product foundProduct[50];
                inputs[j].categoryAddress=categories[i];
                inputs[j].name = shoppingList->products[1][j].name;
-               printf("im in for order %d %s\n",j, shoppingList->products[1][j].name);
+               //printf("im in for order %d %s\n",j, shoppingList->products[1][j].name);
                inputs[j].product = &foundProduct[j];
               
                pthread_create(&threads[j], NULL, (&searchProductInCategory),(void*) &inputs[j]);
                if((foundProduct[j].foundFlag) == 1){ // found product in category store
                   //printf("store %d : flag : %s", storeNum, foundProduct.foundFlag);
-                  printf("found product: %s in %s\n",shoppingList->products[1][j].name, categories[i]);
+                  //printf("found product: %s in %s\n",shoppingList->products[1][j].name, categories[i]);
                   memcpy(&(shoppingList->products[storeNum][j]), &foundProduct[j], sizeof(Product));
                }
           }
@@ -544,7 +542,7 @@ void processCategories(int storeNum, const char* storePath, UserShoppingList* sh
   for(int i = 0; i < categoryCount; i++){
        wait(NULL);
   }
-  printf("i finished the categories??????\n");
+  //printf("i finished the categories??????\n");
 }
 
 
@@ -660,7 +658,6 @@ void processUser(UserShoppingList* shoppingList){
        }
    }
 
-
    if(bestStore != -1){
        printf("best store is: %d\n",bestStore+1);
    }
@@ -679,7 +676,8 @@ void processUser(UserShoppingList* shoppingList){
 }
 
 int main(){
-  while (1) {
+    printf("hey");
+    while (1) {
       pid_t pidUser = vfork(); //process user
 
       if(pidUser < 0){
