@@ -549,7 +549,7 @@ void updateStoreInventory(UserShoppingList* shoppingList, int bestStore) {
             snprintf(specificStorePath, sizeof(specificStorePath), 
                      "Dataset/Store%d/%s/%s.txt", 
                      bestStore + 1, product->name, product->name);
-
+  
             inventoryFile = fopen(specificStorePath, "w");
             if (inventoryFile) {
                 fprintf(inventoryFile, "Name: %s\n", product->name);
