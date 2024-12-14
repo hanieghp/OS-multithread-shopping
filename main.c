@@ -48,6 +48,7 @@ typedef struct {
   int entity;
   char lastModified[50];
   int foundFlag; //to check if product is found
+  char** productPath;
 } Product;
 
 
@@ -186,17 +187,17 @@ char** getSubStoreDirectories(const char *dir){
   for(int i = 0; i < 3; i++){
     snprintf(command, sizeof(command), "find %s -name Store%d -type d", dir, i+1);
     command[strcspn(command, "\n")] = 0;
-    printf("command is: %s\n",command);
+    //printf("command is: %s\n",command);
     FILE *fp = popen((command), "r");
    if (!fp) {
       perror("Error opening files");
       if (fp) fclose(fp);
       return NULL;
   }
-  fgets(subDir, sizeof(subDir), fp);
-  while(fgets(subDir, sizeof(subDir), fp)!=NULL){
-      printf("hi : %s\n", subDir);
-      subDir[strcspn(subDir, "\n")] = 0;
+  //fgets(subDir, sizeof(subDir), fp);
+   if(fgets(subDir, sizeof(subDir), fp)!=NULL){
+      //printf("hi : %s\n", subDir);
+      //subDir[strcspn(subDir, "\n")] = 0;
       categories[count] = strdup(subDir);
       count++;               
   }
@@ -322,7 +323,7 @@ void MemberShipDiscount(UserShoppingList* shoppingList){
 }
 
 
-void* productRatingThread(void* args) {
+/*void* productRatingThread(void* args) {
     ThreadManagementData* data = (ThreadManagementData*)args;
     UserShoppingList* shoppingList = data->shoppingList;
     int bestStore = data->bestStore;
@@ -364,10 +365,10 @@ void* productRatingThread(void* args) {
     }
 pthread_mutex_unlock(data->ratingMutex);
     return NULL;
-}
+}*/
 
 
-void* productListUpdateThread(void* args) {
+/*void* productListUpdateThread(void* args) {
     ThreadManagementData* data = (ThreadManagementData*)args;
     UserShoppingList* shoppingList = data->shoppingList;
     int bestStore = data->bestStore;
@@ -383,9 +384,9 @@ void* productListUpdateThread(void* args) {
     
     pthread_mutex_unlock(data->updateMutex);
     return NULL;
-}
+}*/
 
-void UpdateRateProducts(UserShoppingList* shoppingList, int bestStore){
+/*void UpdateRateProducts(UserShoppingList* shoppingList, int bestStore){
    pthread_t ratingThread[MAX_PRODUCTS];
    threadInput inputs[MAX_PRODUCTS];
 
@@ -407,7 +408,7 @@ void UpdateRateProducts(UserShoppingList* shoppingList, int bestStore){
            pthread_join(ratingThread[i], NULL);
        }
    }
-}
+}*/
 
 
 UserShoppingList* read_user_shopping_list() {
@@ -461,8 +462,10 @@ void* searchProductInCategory(void* args){
        filepath[strcspn(filepath, "\n")] = 0;
        Product* product = readProductFromFile(filepath);
        if (product && strcasecmp(product->name, input->name) == 0){
+        strcpy(product->productPath[1], filepath);
+        printf("filepath is: %s",product->productPath[1]);
 
-
+        
            sem_wait(g_result_sem);
 
 
@@ -545,9 +548,9 @@ void updateStoreInventory(UserShoppingList* shoppingList, int bestStore) {
     for (int i = 0; i < shoppingList->productCount; i++) {
         Product* product = &shoppingList->products[bestStore][i];
         if (product->foundFlag) {
-            product->entity -= shoppingList->products[1][i].entity;
+            product->entity -= shoppingList->entity[i];
             snprintf(specificStorePath, sizeof(specificStorePath), 
-                     "Dataset/Store%d/%s/%s.txt", 
+                     product->productPath, 
                      bestStore + 1, product->name, product->name);
   
             inventoryFile = fopen(specificStorePath, "w");
@@ -681,13 +684,10 @@ void processUser(UserShoppingList* shoppingList){
             .updateMutex = &updateMutex
         };
 
-
-
-
     pthread_t valuationThread, ratingThread, updateThread;
         
     pthread_create(&valuationThread, NULL, basketValuationThread, &threadData);
-    pthread_create(&ratingThread, NULL, productRatingThread, &threadData);
+    //pthread_create(&ratingThread, NULL, productRatingThread, &threadData);
     pthread_create(&updateThread, NULL, productListUpdateThread, &threadData);
     
     
