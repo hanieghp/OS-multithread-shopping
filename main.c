@@ -442,7 +442,7 @@ UserShoppingList* read_user_shopping_list() {
 }
 void* searchProductInCategory(void* args){
    printf("im searching\n");
-   //sem_wait(g_search_sem);
+   sem_wait(g_search_sem);
   DIR *dir;
   struct dirent *entry;
   char categoryPath[MAX_PATH_LEN], command[1000];
@@ -464,7 +464,7 @@ void* searchProductInCategory(void* args){
        if (product && strcasecmp(product->name, input->name) == 0){
             printf("i found it in %s!!", filepath);
 
-           //sem_wait(g_result_sem);
+           sem_wait(g_result_sem);
 
 
            //printf("i found it in %s!!!!\n", filepath);
@@ -476,18 +476,18 @@ void* searchProductInCategory(void* args){
            input->product->foundFlag = 1;
 
 
-           //sem_post(g_result_sem);
+           sem_post(g_result_sem);
 
 
            pclose(fp);
-           //sem_post(g_search_sem);
+           sem_post(g_search_sem);
            return NULL;  
        }
        free(product);
    }
    //printf("i finished the files????\n");            
    pclose(fp);
-   //sem_post(g_search_sem);
+   sem_post(g_search_sem);
    return NULL;
 }
 
@@ -642,9 +642,9 @@ void processStores(UserShoppingList* shoppingList){ //making process for stores
 
 void processUser(UserShoppingList* shoppingList){
   //semaphore
-    /*g_search_sem = sem_open(SEM_PRODUCT_SEARCH, O_CREAT, 0644, 1);
+    g_search_sem = sem_open(SEM_PRODUCT_SEARCH, O_CREAT, 0644, 1);
     g_result_sem = sem_open(SEM_RESULT_UPDATE, O_CREAT, 0644, 1);
-    g_inventory_sem = sem_open(SEM_INVENTORY_UPDATE, O_CREAT, 0644, 1);
+    /*g_inventory_sem = sem_open(SEM_INVENTORY_UPDATE, O_CREAT, 0644, 1);
     g_shopping_list_sem = sem_open(SEM_SHOPPING_LIST, O_CREAT, 0644, 1);
 
 
