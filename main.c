@@ -61,6 +61,7 @@ typedef struct {
   pid_t userPID;
   int processingComplete;
   UserMembership membership;
+  int entity[MAX_PRODUCTS];
 } UserShoppingList;
 
 
@@ -78,8 +79,6 @@ typedef struct {
     pthread_mutex_t* ratingMutex;
     pthread_mutex_t* updateMutex;
 } ThreadManagementData;
-
-
 
 
 sem_t *g_search_sem = NULL;
@@ -205,7 +204,7 @@ double calculateProductValue(Product* product){
   if(product->price <= 0){
       return 0;
   }
-  printf("score is: %f and price is %f",product->score, product->price);
+  printf("score is: %.2f and price is %.2f\n",product->score, product->price);
   return product->score * product->price;
 }
 
@@ -214,9 +213,9 @@ double calculateTotalCost(UserShoppingList* shoppingList, int store){
    for(int i = 0;i < shoppingList->productCount; i++){
        Product* product = &shoppingList->products[store][i];
        if(product->foundFlag){
-           int productQuantity = product->entity;
-           printf("price is %f and entity : %d\n",product->price, product->entity);
-           totalCost += product->price * product->entity;
+           int productQuantity = shoppingList->entity[i];
+           printf("price is %.2f and entity : %d and store %d\n",product->price, productQuantity, store);
+           totalCost += product->price * productQuantity;
        }
    }
    return totalCost;
@@ -359,9 +358,6 @@ void* productListUpdateThread(void* args) {
     return NULL;
 }
 
-
-
-
 void UpdateRateProducts(UserShoppingList* shoppingList, int bestStore){
    pthread_t ratingThread[MAX_PRODUCTS];
    threadInput inputs[MAX_PRODUCTS];
@@ -403,7 +399,7 @@ UserShoppingList* read_user_shopping_list() {
       //scanf("%99s", shoppingList->products[2][i].name);
       //scanf("%99s", shoppingList->products[3][i].name);
       printf("Product %d Quantity: ", i + 1);
-      scanf("%d", &shoppingList->products[1][i].entity);
+      scanf("%d", &shoppingList->entity[i]);
       //scanf("%d", &shoppingList->products[2][i].entity);
       //scanf("%d", &shoppingList->products[3][i].entity);
   }
@@ -414,7 +410,7 @@ UserShoppingList* read_user_shopping_list() {
 
 
   shoppingList->userPID = getpid();
-  printf("pid: %d",shoppingList->userPID);
+  printf("pid: %d\n",shoppingList->userPID);
   return shoppingList;
 }
 void* searchProductInCategory(void* args){
@@ -507,8 +503,6 @@ int checkBudgetConstraint(UserShoppingList* shoppingList, int bestStore) {
    return 1;
 }
 
-
-
 void updateStoreInventory(UserShoppingList* shoppingList, int bestStore) {
     sem_wait(g_inventory_sem);
 
@@ -528,9 +522,6 @@ void updateStoreInventory(UserShoppingList* shoppingList, int bestStore) {
             snprintf(specificStorePath, sizeof(specificStorePath), 
                      "Dataset/Store%d/%s/%s.txt", 
                      bestStore + 1, product->name, product->name);
-
-
-
 
             inventoryFile = fopen(specificStorePath, "w");
             if (inventoryFile) {
@@ -556,7 +547,6 @@ void updateStoreInventory(UserShoppingList* shoppingList, int bestStore) {
 void processCategories(int storeNum, const char* storePath, UserShoppingList* shoppingList){//making process for categories
   char** categories = getSubDirectories(storePath);
 
-
    for(int i = 0; i < categoryCount; i++){
        pthread_t threads[shoppingList->productCount];
        threadInput inputs[shoppingList->productCount];
@@ -576,9 +566,10 @@ void processCategories(int storeNum, const char* storePath, UserShoppingList* sh
                inputs[j].product = &foundProduct[j];
               
                pthread_create(&threads[j], NULL, (&searchProductInCategory),(void*) &inputs[j]);
-               if((foundProduct[j].foundFlag) == 1){ // found product in category store
+               if(foundProduct[j].foundFlag){ // found product in category store
                   //printf("store %d : flag : %s", storeNum, foundProduct.foundFlag);
                   printf("found product: %s in %s\n",shoppingList->products[1][j].name, categories[i]);
+                  //foundProduct[j].entity = shoppingList->products[1][j].entity;
                   memcpy(&(shoppingList->products[storeNum][j]), &foundProduct[j], sizeof(Product));
                }
           }
@@ -595,9 +586,6 @@ void processCategories(int storeNum, const char* storePath, UserShoppingList* sh
   }
   //printf("i finished the categories??????\n");
 }
-
-
-
 
 void processStores(UserShoppingList* shoppingList){ //making process for stores
    char** stores = getSubDirectories("Dataset");
@@ -708,13 +696,14 @@ void processUser(UserShoppingList* shoppingList){
    for (int i = 0; i < shoppingList->productCount; i++) {
        for (int j = 0; j < MAX_storeCount; j++){
            if (shoppingList->products[j][i].foundFlag) {
-               printf("store %d Product %d: %s (Price: %.2f, Score: %.2f, Entity: %d)\n",
+               printf("store %d Product %d: %s (Price: %.2f, Score: %.2f, Entity: %d, UserEntity: %d)\n",
                        j+1,
                        i+1,
                        shoppingList->products[j][i].name,
                        shoppingList->products[j][i].price,
                        shoppingList->products[j][i].score,
-                       shoppingList->products[j][i].entity);
+                       shoppingList->products[j][i].entity,
+                       shoppingList->entity[i]);
                        calculateProductValue(&shoppingList->products[j][i]);
            } else {
                printf("store %d Product %d: %s - Not Found\n",
@@ -745,8 +734,6 @@ void processUser(UserShoppingList* shoppingList){
     sem_unlink(SEM_RESULT_UPDATE);
     sem_unlink(SEM_INVENTORY_UPDATE);
     sem_unlink(SEM_SHOPPING_LIST);
-
-
 }
 
 
@@ -762,6 +749,7 @@ int main(){
       else if(pidUser == 0){
            pthread_t threads[MAX_storeCount];
            UserShoppingList* shoppingList = read_user_shopping_list();
+           printf("bafore user process");
            processUser(shoppingList);
            free(shoppingList);
            exit(0);
