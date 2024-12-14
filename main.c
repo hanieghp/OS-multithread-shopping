@@ -122,9 +122,6 @@ Product* readProductFromFile(const char* filepath) {
      return NULL;
  }
 
-
-
-
  Product* product = malloc(sizeof(Product));
  memset(product, 0, sizeof(Product));
  char line[200];
@@ -258,8 +255,8 @@ char** getSubDirectories(const char *dir){
      if (fp) fclose(fp);
      return NULL;
  }
- fgets(subDir, sizeof(subDir), fp);
- while(fgets(subDir, sizeof(subDir), fp)!=NULL){
+ //fgets(subDir, sizeof(subDir), fp);
+ if(fgets(subDir, sizeof(subDir), fp)!=NULL){
      categories[count] = strdup(subDir);
      count++;              
  }
@@ -422,7 +419,7 @@ pthread_mutex_unlock(data->ratingMutex);
 
 
 
-/*void* productListUpdateThread(void* args) {
+void* productListUpdateThread(void* args) {
    ThreadManagementData* data = (ThreadManagementData*)args;
    UserShoppingList* shoppingList = data->shoppingList;
    int bestStore = data->bestStore;
@@ -438,7 +435,7 @@ pthread_mutex_unlock(data->ratingMutex);
   
    pthread_mutex_unlock(data->updateMutex);
    return NULL;
-}*/
+}
 
 
 /*void UpdateRateProducts(UserShoppingList* shoppingList, int bestStore){
@@ -618,9 +615,6 @@ int checkBudgetConstraint(UserShoppingList* shoppingList, int bestStore) {
 void updateStoreInventory(UserShoppingList* shoppingList, int bestStore) {
    sem_wait(g_inventory_sem);
 
-
-
-
    char specificStorePath[MAX_PATH_LEN];
    FILE* inventoryFile;
    time_t now;
@@ -628,13 +622,12 @@ void updateStoreInventory(UserShoppingList* shoppingList, int bestStore) {
    char timestamp[50];
    strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", localtime(&now));
 
-
-
-
    for (int i = 0; i < shoppingList->productCount; i++) {
        Product* product = &shoppingList->products[bestStore][i];
        if (product->foundFlag) {
-           product->entity -= shoppingList->entity[i];
+           product->entity[i] -= shoppingList->entity[i];
+           printf("minus entity %d\n", product->entity[i]);
+           printf("new entity: %d", Product->entity[i]);
            snprintf(specificStorePath, sizeof(specificStorePath),
                     product->productPath,
                     bestStore + 1, product->name, product->name);
@@ -660,12 +653,9 @@ void updateStoreInventory(UserShoppingList* shoppingList, int bestStore) {
    sem_post(g_inventory_sem);
 }
 
-
-
-
 void processCategories(int storeNum, const char* storePath, UserShoppingList* shoppingList){//making process for categories
  char** categories = getSubDirectories(storePath);
-
+    printf("i'm in category processing");
 
   for(int i = 0; i < categoryCount; i++){
       pthread_t threads[shoppingList->productCount];
@@ -707,7 +697,6 @@ void processCategories(int storeNum, const char* storePath, UserShoppingList* sh
  //printf("i finished the categories??????\n");
 }
 
-
 void processStores(UserShoppingList* shoppingList){ //making process for stores
   char** stores = getSubStoreDirectories("Dataset");
   sem_t sem;
@@ -731,9 +720,6 @@ void processStores(UserShoppingList* shoppingList){ //making process for stores
  sem_destroy(&sem);
 }
 
-
-
-
 void processUser(UserShoppingList* shoppingList){
  //semaphore
    g_search_sem = sem_open(SEM_PRODUCT_SEARCH, O_CREAT, 0644, 1);
@@ -741,49 +727,21 @@ void processUser(UserShoppingList* shoppingList){
    g_inventory_sem = sem_open(SEM_INVENTORY_UPDATE, O_CREAT, 0644, 1);
    g_shopping_list_sem = sem_open(SEM_SHOPPING_LIST, O_CREAT, 0644, 1);
 
-
-
-
-
-
-
-
    if (g_search_sem == SEM_FAILED || g_result_sem == SEM_FAILED ||
        g_inventory_sem == SEM_FAILED || g_shopping_list_sem == SEM_FAILED) {
        perror("Semaphore creation failed");
        return;
    }
-
-
-
-
    sem_wait(g_shopping_list_sem);
-
-
-
-
  // Process stores to find products
  processStores(shoppingList);
-
-
-
-
  int bestStore = findBestStore(shoppingList);
 
-
-
-
  if(bestStore != -1 && checkBudgetConstraint(shoppingList, bestStore) && checkStoreInventory(shoppingList, bestStore)){
-
-
-
 
    pthread_mutex_t valuationMutex = PTHREAD_MUTEX_INITIALIZER;
    pthread_mutex_t ratingMutex = PTHREAD_MUTEX_INITIALIZER;
    pthread_mutex_t updateMutex = PTHREAD_MUTEX_INITIALIZER;
-
-
-
 
    ThreadManagementData threadData = {
            .shoppingList = shoppingList,
@@ -793,34 +751,24 @@ void processUser(UserShoppingList* shoppingList){
            .updateMutex = &updateMutex
        };
 
-
    pthread_t valuationThread, ratingThread, updateThread;
       
    pthread_create(&valuationThread, NULL, basketValuationThread, &threadData);
    //pthread_create(&ratingThread, NULL, productRatingThread, &threadData);
    pthread_create(&updateThread, NULL, productListUpdateThread, &threadData);
   
-  
    pthread_join(valuationThread, NULL);
    pthread_join(ratingThread, NULL);
    pthread_join(updateThread, NULL);
-  
   
    pthread_mutex_destroy(&valuationMutex);
    pthread_mutex_destroy(&ratingMutex);
    pthread_mutex_destroy(&updateMutex);
   
-  
    updateStoreInventory(shoppingList, bestStore);
-
-
-
 
     printf("puechase succesfull\n");
     printf("your total cost %.2f\n", shoppingList->totalCost);
-
-
-
 
     //updateStoreInventory(shoppingList, bestStore);
     MemberShipDiscount(shoppingList);
@@ -828,9 +776,6 @@ void processUser(UserShoppingList* shoppingList){
  else{
    printf("you can't buy");
  }
-
-
-
 
  sem_post(g_shopping_list_sem);
   // Print processed products
@@ -856,39 +801,20 @@ void processUser(UserShoppingList* shoppingList){
       }
   }
 
-
-
-
-
-
-
-
   if(bestStore != -1){
       printf("best store is: %d\n",bestStore+1);
   }
-
-
-
 
    sem_close(g_search_sem);
    sem_close(g_result_sem);
    sem_close(g_inventory_sem);
    sem_close(g_shopping_list_sem);
 
-
-
-
-
-
-
-
    sem_unlink(SEM_PRODUCT_SEARCH);
    sem_unlink(SEM_RESULT_UPDATE);
    sem_unlink(SEM_INVENTORY_UPDATE);
    sem_unlink(SEM_SHOPPING_LIST);
 }
-
-
 
 
 int main(){
@@ -911,9 +837,6 @@ int main(){
           exit(0);
      }
  }
-
-
-
 
  printf("Exiting...\n");
  return 0;
