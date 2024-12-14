@@ -179,6 +179,29 @@ void listStoreProducts(const char* storePath) {
   closedir(dir);
 }
 
+char** getSubStoreDirectories(const char *dir){
+  int count = 0;
+  char **categories = malloc(sizeof(char *) * 1000);     
+  char subDir[MAX_PATH_LEN], command[MAX_NAME_LEN];
+  for(int i = 0; i < 3; i++){
+    snprintf(command, sizeof(command), "find %s -name Store1 -type d", dir);
+    FILE *fp = popen((command), "r");
+   if (!fp) {
+      perror("Error opening files");
+      if (fp) fclose(fp);
+      return NULL;
+  }
+  fgets(subDir, sizeof(subDir), fp);
+  while(fgets(subDir, sizeof(subDir), fp)!=NULL){
+      categories[count] = strdup(subDir);
+      count++;               
+  }
+  pclose(fp);
+  }
+  
+  return categories;
+}
+
 
 char** getSubDirectories(const char *dir){
   int count = 0;
@@ -588,7 +611,7 @@ void processCategories(int storeNum, const char* storePath, UserShoppingList* sh
 }
 
 void processStores(UserShoppingList* shoppingList){ //making process for stores
-   char** stores = getSubDirectories("Dataset");
+   char** stores = getSubStoreDirectories("Dataset");
    sem_t sem;
    sem_init(&sem, 1, 1);
   for(int i = 0; i < MAX_storeCount; i++){
@@ -749,7 +772,7 @@ int main(){
       else if(pidUser == 0){
            pthread_t threads[MAX_storeCount];
            UserShoppingList* shoppingList = read_user_shopping_list();
-           printf("bafore user process");
+           //printf("bafore user process");
            processUser(shoppingList);
            free(shoppingList);
            exit(0);
