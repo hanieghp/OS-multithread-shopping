@@ -184,7 +184,9 @@ char** getSubStoreDirectories(const char *dir){
   char **categories = malloc(sizeof(char *) * 1000);     
   char subDir[MAX_PATH_LEN], command[MAX_NAME_LEN];
   for(int i = 0; i < 3; i++){
-    snprintf(command, sizeof(command), "find %s -name Store1 -type d", dir);
+    snprintf(command, sizeof(command), "find %s -name Store%d -type d", dir, i+1);
+    command[strcspn(command, "\n")] = 0;
+    printf("command is: %s\n",command);
     FILE *fp = popen((command), "r");
    if (!fp) {
       perror("Error opening files");
@@ -193,6 +195,8 @@ char** getSubStoreDirectories(const char *dir){
   }
   fgets(subDir, sizeof(subDir), fp);
   while(fgets(subDir, sizeof(subDir), fp)!=NULL){
+      printf("hi : %s\n", subDir);
+      subDir[strcspn(subDir, "\n")] = 0;
       categories[count] = strdup(subDir);
       count++;               
   }
