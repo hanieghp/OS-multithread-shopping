@@ -441,13 +441,14 @@ UserShoppingList* read_user_shopping_list() {
   return shoppingList;
 }
 void* searchProductInCategory(void* args){
-    sem_wait(g_search_sem);
-
+   printf("im searching\n");
+   //sem_wait(g_search_sem);
   DIR *dir;
   struct dirent *entry;
   char categoryPath[MAX_PATH_LEN], command[1000];
    threadInput *input = (threadInput *)args;
-   //printf("input : %s %s\n",input-> input->name);
+   //printf("hiiiiii");
+   printf("input : %s\n",input->name);
    snprintf(command, sizeof(command), "find %s -maxdepth 1 -type f", input->categoryAddress);
    FILE *fp = popen((command), "r");
    if (!fp) {
@@ -461,9 +462,9 @@ void* searchProductInCategory(void* args){
        filepath[strcspn(filepath, "\n")] = 0;
        Product* product = readProductFromFile(filepath);
        if (product && strcasecmp(product->name, input->name) == 0){
+            printf("i found it in %s!!", filepath);
 
-
-           sem_wait(g_result_sem);
+           //sem_wait(g_result_sem);
 
 
            //printf("i found it in %s!!!!\n", filepath);
@@ -475,18 +476,18 @@ void* searchProductInCategory(void* args){
            input->product->foundFlag = 1;
 
 
-           sem_post(g_result_sem);
+           //sem_post(g_result_sem);
 
 
            pclose(fp);
-           sem_post(g_search_sem);
+           //sem_post(g_search_sem);
            return NULL;  
        }
        free(product);
    }
    //printf("i finished the files????\n");            
    pclose(fp);
-   sem_post(g_search_sem);
+   //sem_post(g_search_sem);
    return NULL;
 }
 
@@ -591,7 +592,7 @@ void processCategories(int storeNum, const char* storePath, UserShoppingList* sh
                inputs[j].name = shoppingList->products[1][j].name;
                //printf("im in for order %d %s\n",j, shoppingList->products[1][j].name);
                inputs[j].product = &foundProduct[j];
-              
+                printf("im before searching\n");          
                pthread_create(&threads[j], NULL, (&searchProductInCategory),(void*) &inputs[j]);
                if(foundProduct[j].foundFlag){ // found product in category store
                   //printf("store %d : flag : %s", storeNum, foundProduct.foundFlag);
@@ -608,9 +609,9 @@ void processCategories(int storeNum, const char* storePath, UserShoppingList* sh
           perror("Failed to fork for category\n");
       }
   }
-  for(int i = 0; i < categoryCount; i++){
+  /*for(int i = 0; i < categoryCount; i++){
        wait(NULL);
-  }
+  }*/
   //printf("i finished the categories??????\n");
 }
 
