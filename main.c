@@ -336,8 +336,10 @@ void processCategories(int storeNum, const char* storePath, UserShoppingList* sh
                 pthread_create(&threads[j*categoryCount+i], NULL, (&searchProductInCategory),(void*) &inputs[j]);
                 if((inputs[j].product->foundFlag) == 1){ // found product in category store
                     //printf("store %d : flag : %s", storeNum, foundProduct.foundFlag);
-                    printf("found product: %s in %s\n",shoppingList->products[1][j].name, categories[i]);
+                    printf("%d : found product: %s in %s\n",storeNum, shoppingList->products[1][j].name, categories[i]);
+                    
                     memcpy(&(shoppingList->products[storeNum][inputs[j].proNum]), &foundProduct[j], sizeof(Product));
+                    printf("khoda : %d, khoda2 : %d",foundProduct[j].entity ,shoppingList->products[storeNum][inputs[j].proNum].entity);
                 }
                 j++;
             
@@ -371,7 +373,7 @@ void processStores(UserShoppingList* shoppingList){ //making process for stores
        else if(pidStore < 0){
            perror("Failed to fork for store\n");
        }
-       printf("stores finished");
+       printf("store finished");
    }
    for(int i = 0; i < storeCount; i++){
        free(stores[i]);
