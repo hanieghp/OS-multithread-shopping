@@ -36,9 +36,16 @@ typedef struct {
    double price;
    double score;
    int entity;
+   int originEntity;
    char lastModified[50];
    int foundFlag; //to check if product is found
 } Product;
+
+typedef enum {
+    NoMember,
+    FirstTimeMember,
+    LoyalMember
+} UserMemberShip;
 
 typedef struct {
   char userID[MAX_NAME_LEN];
@@ -49,7 +56,9 @@ typedef struct {
   int store_match_count[MAX_storeCount];
   pid_t userPID;
   int processingComplete;
-  //UserMembership membership;
+  UserMemberShip storeMembership[MAX_storeCount];
+  int purchaseCount[MAX_storeCount];
+  bool hasDiscount[MAX_storeCount];
   int entity[MAX_PRODUCTS];
 } UserShoppingList;
 
@@ -60,6 +69,8 @@ typedef struct {
    char **names;
    Product *product;
 } threadInput;
+
+
 
 sem_t *g_search_sem = NULL;
 sem_t *g_result_sem = NULL;
@@ -197,6 +208,11 @@ UserShoppingList* read_user_shopping_list() {
    printf("Enter Budget Cap (-1 for no cap): ");
    scanf("%lf", &shoppingList->budgetCap);
 
+   for(int i = 0; i < storeCount; i++){
+    shoppingList->storeMembership[i] = NoMember;
+    shoppingList->purchaseCount[i] = 0;
+    shoppingList->hasDiscount[i] = false;
+   }
    shoppingList->userPID = getpid();
    return shoppingList;
 }
@@ -420,7 +436,6 @@ void updateProductRating(const char* productName, double newRating) {
     sem_close(g_rating_sem);
     sem_unlink(SEM_RATING_UPDATE);
 }
-
 
 void* rateProducts(void* args) {
     UserShoppingList* shoppingList = (UserShoppingList*)args;
