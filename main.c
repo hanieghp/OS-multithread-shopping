@@ -67,6 +67,9 @@ sem_t *g_result_sem = NULL;
 sem_t *g_inventory_sem = NULL;
 sem_t *g_shopping_list_sem = NULL;
 
+pthread_mutex_t liveLock = PTHREAD_MUTEX_INITIALIZER;
+bool stopThread = false;
+
 //define all functions
 void processCategories(int storeNum, const char* storePath, UserShoppingList* shoppingList);
 void processStroes(UserShoppingList* shoppingList);
@@ -231,10 +234,45 @@ char** getSubDirectories(const char *dir){
    return categories;
 }
 
+double calculateProductValue(Product* product){
+    if(product->price <= 0){
+        return 0;
+    }
+    printf("score is: %.2f and price is: %.2f\n",product->score ,product->price);
+    return product->score * product->price;
+}
 
-pthread_mutex_t liveLock = PTHREAD_MUTEX_INITIALIZER;
-bool stopThread = false;
+void* calculateStoreBaskettValue(void* args){
+    UserShoppingList* shoppingList = (UserShoppingList*)args;
 
+    for(int i = 0; i < MAX_storeCount; i++){
+        double totalBasketValue = 0.0;
+        int validProductCount = 0;
+
+        for(int j = 0; j < shoppingList->productCount; j++){
+            Product* curProduct = &(shoppingList->products[i][j]);
+
+            if(curProduct->foundFlag){
+                double productValue = calculateProductValue(curProduct) * shoppingList->entity[j];
+                totalBasketValue += productValue;
+                validProductCount++;
+            }
+        }
+        sem_wait(g_shopping_list_sem);
+        shoppingList->totalCost = totalBasketValue;
+        shoppingList->store_match_count[i] = validProductCount;
+
+        printf("store %d basket value: %.2f\n", i+1, totalBasketValue);
+        printf("match product in store %d: %d out of %d\n", i+1, validProductCount, shoppingList->productCount);
+        printf("TID: %ld and PID: %d\n", pthread_self(), getpid());
+
+        if(shoppingList->budgetCap > 0 && totalBasketValue > shoppingList->budgetCap){
+            printf("store %d total cost %.2f but budget cap %.2f\n", i+1, totalBasketValue, shoppingList->budgetCap);
+        }
+        sem_post(g_shopping_list_sem);
+    }
+    return NULL;
+}
 
 void* searchProductInCategory(void* args){
     //printf("in thread with tid : %ld\n", pthread_self());
@@ -305,7 +343,7 @@ void processCategories(int storeNum, const char* storePath, UserShoppingList* sh
     } for (int i = 0; i < categoryCount; i++) { 
         pid_t pidCategory = vfork(); 
         if (pidCategory == 0) { 
-            printf("category : %s\n", categories[i]); 
+            //printf("category : %s\n", categories[i]); 
             categories[i][strcspn(categories[i], "\n")] = 0; 
             char** productFiles = getsubfiles(categories[i]); 
             int j = 0; 
@@ -322,7 +360,7 @@ void processCategories(int storeNum, const char* storePath, UserShoppingList* sh
             for (int l = 0; l < j; l++) { 
                 pthread_join(threads[l], NULL); 
                 if (inputs[l]->product->foundFlag == 1) { 
-                    printf("%d : found product: %s in %s\n", storeNum, shoppingList->products[1][l].name, categories[i]); 
+                    //printf("%d : found product: %s in %s\n", storeNum, shoppingList->products[1][l].name, categories[i]); 
                     
                     memcpy(&(shoppingList->products[storeNum][inputs[l]->proNum]), inputs[l]->product, sizeof(Product)); 
                 } 
@@ -346,7 +384,7 @@ void processStores(UserShoppingList* shoppingList){ //making process for stores
    for(int i = 0; i < storeCount; i++){
        pid_t pidStore = vfork();
        if(pidStore == 0){
-           printf("processing store: %s\n",stores[i]);
+           //printf("processing store: %s\n",stores[i]);
            stores[i][strcspn(stores[i], "\n")] = 0;
            processCategories(i, stores[i], shoppingList);
            exit(0);
@@ -354,7 +392,7 @@ void processStores(UserShoppingList* shoppingList){ //making process for stores
        else if(pidStore < 0){
            perror("Failed to fork for store\n");
        }
-       printf("store finished");
+       printf("store %d finished\n",i+1);
    }
    for(int i = 0; i < storeCount; i++){
        free(stores[i]);
@@ -365,16 +403,16 @@ void processStores(UserShoppingList* shoppingList){ //making process for stores
 
 
 void processUser(UserShoppingList* shoppingList){
-    printf("in user process\n");
+    /*sem_unlink(SEM_PRODUCT_SEARCH);
+   sem_unlink(SEM_RESULT_UPDATE);
+   sem_unlink(SEM_INVENTORY_UPDATE);
+   sem_unlink(SEM_SHOPPING_LIST);*/
+    printf("in user process with pid: %d\n", getpid());
    //semaphore
    g_search_sem = sem_open(SEM_PRODUCT_SEARCH, O_CREAT, 0644, 1);
    g_result_sem = sem_open(SEM_RESULT_UPDATE, O_CREAT, 0644, 1);
    g_inventory_sem = sem_open(SEM_INVENTORY_UPDATE, O_CREAT, 0644, 1);
    g_shopping_list_sem = sem_open(SEM_SHOPPING_LIST, O_CREAT, 0644, 1);
-
-
-   printf("after unlink\n");
-
   
    if (g_search_sem == SEM_FAILED || g_result_sem == SEM_FAILED ||
        g_inventory_sem == SEM_FAILED || g_shopping_list_sem == SEM_FAILED) {
@@ -383,7 +421,12 @@ void processUser(UserShoppingList* shoppingList){
    }
 
    processStores(shoppingList);
-
+   pthread_t basketValueThread;
+   if(pthread_create(&basketValueThread ,NULL, calculateStoreBaskettValue, (void*)shoppingList) != 0){
+    perror("faile to create basekt value");
+    return;
+   }
+   pthread_join(basketValueThread, NULL);
 
     printf("\nProcessed Shopping List for User %s:\n", shoppingList->userID);
     for (int i = 0; i < shoppingList->productCount; i++) {
@@ -420,10 +463,8 @@ void processUser(UserShoppingList* shoppingList){
 }
 
 int main(){
-
    while (1) {
        pid_t pidUser = vfork(); //process user
-
 
        if(pidUser < 0){
            perror("Failed to fork for User\n");
@@ -432,6 +473,10 @@ int main(){
        else if(pidUser == 0){
             pthread_t threads[storeCount];
             UserShoppingList* shoppingList = read_user_shopping_list();
+            /*if(pthread_create(&threads[storeCount], NULL, calculateStoreBaskettValue, (void*)shoppingList != 0)){
+                perror("faile to create basekt value");
+                exit(1);
+            }*/
             processUser(shoppingList);
                 // show user its choices
             //pthread_create(&threads[1], NULL, &getProductsValue, shoppingList->products);
