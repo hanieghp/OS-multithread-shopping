@@ -305,58 +305,53 @@ char ** getsubfiles(char *dir){
     return files;
 }
 
-void processCategories(int storeNum, const char* storePath, UserShoppingList* shoppingList){
-    pthread_t threads[1000];
-    char** categories = getSubDirectories(storePath);
-    int count = 0;
-    char** productNames = malloc(shoppingList->productCount*sizeof(char*));
-    for(int k=0; k < shoppingList->productCount; k++){
-        productNames[k] = shoppingList->products[1][k].name;
-    }
-    for(int i = 0; i < categoryCount; i++){
-        pid_t pidCategory = vfork();
-        if(pidCategory==0){
-            
-            printf("category : %s\n", categories[i]);
-            categories[i][strcspn(categories[i], "\n")] = 0;
-            char** productFiles;
-            productFiles = getsubfiles(categories[i]);
-            //printf("file : %s\n", productFiles[0]);
-            //int numberF = sizeof(productFiles);
-            //printf("number : %d\n", numberF);
-            int j =0;
-            Product foundProduct[50];
-            threadInput inputs[500];
-            while(productFiles[j] != NULL){
 
-                inputs[j].filepath = productFiles[j];
-                inputs[j].proCount = shoppingList->productCount;
-                inputs[j].names = productNames;
-                inputs[j].product = &foundProduct[j];
-                pthread_create(&threads[j*categoryCount+i], NULL, (&searchProductInCategory),(void*) &inputs[j]);
-                if((inputs[j].product->foundFlag) == 1){ // found product in category store
-                    //printf("store %d : flag : %s", storeNum, foundProduct.foundFlag);
-                    printf("%d : found product: %s in %s\n",storeNum, shoppingList->products[1][j].name, categories[i]);
+void processCategories(int storeNum, const char* storePath, UserShoppingList* shoppingList) { 
+    pthread_t threads[1000]; 
+    char** categories = getSubDirectories(storePath); 
+    //int categoryCount = 0; // Ensure this is set correctly 
+    char** productNames = malloc(shoppingList->productCount * sizeof(char*)); 
+    // Copy product names 
+    for (int k = 0; k < shoppingList->productCount; k++) { 
+        productNames[k] = malloc(strlen(shoppingList->products[1][k].name) + 1); 
+        strcpy(productNames[k], shoppingList->products[1][k].name); 
+    } for (int i = 0; i < categoryCount; i++) { 
+        pid_t pidCategory = vfork(); 
+        if (pidCategory == 0) { 
+            printf("category : %s\n", categories[i]); 
+            categories[i][strcspn(categories[i], "\n")] = 0; 
+            char** productFiles = getsubfiles(categories[i]); 
+            int j = 0; 
+            threadInput* inputs[500]; 
+            while (productFiles[j] != NULL) { 
+                inputs[j] = malloc(sizeof(threadInput)); 
+                inputs[j]->filepath = productFiles[j]; 
+                inputs[j]->proCount = shoppingList->productCount; 
+                inputs[j]->names = productNames; 
+                inputs[j]->product = malloc(sizeof(Product)); 
+                pthread_create(&threads[j], NULL, searchProductInCategory, (void*)inputs[j]); 
+                j++; 
+            } 
+            for (int l = 0; l < j; l++) { 
+                pthread_join(threads[l], NULL); 
+                if (inputs[l]->product->foundFlag == 1) { 
+                    printf("%d : found product: %s in %s\n", storeNum, shoppingList->products[1][l].name, categories[i]); 
                     
-                    memcpy(&(shoppingList->products[storeNum][inputs[j].proNum]), &foundProduct[j], sizeof(Product));
-                    printf("khoda : %d, khoda2 : %d",foundProduct[j].entity ,shoppingList->products[storeNum][inputs[j].proNum].entity);
-                }
-                j++;
-            
+                    memcpy(&(shoppingList->products[storeNum][inputs[l]->proNum]), inputs[l]->product, sizeof(Product)); 
+                } 
+                free(inputs[l]->product); 
+                free(inputs[l]); 
+            } 
+            exit(0); 
+            } else if (pidCategory < 0) {
+                perror("Failed to fork for category\n"); 
             }
-
-            for(int l =0 ; l < j; l++){
-                pthread_join(threads[l], NULL);
-            }  
-            exit(0);
-            
-        }else if(pidCategory < 0){
-           perror("Failed to fork for category\n");
-       }
-    }
-    
-}
-
+        } // Free memory 
+        for (int k = 0; k < shoppingList->productCount; k++) { 
+            free(productNames[k]); 
+            } 
+        free(productNames); 
+    }  
 
 void processStores(UserShoppingList* shoppingList){ //making process for stores
     char** stores = getSubStoreDirectories("Dataset");
