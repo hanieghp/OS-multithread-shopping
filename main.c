@@ -296,14 +296,25 @@ void* searchProductInCategory(void* args){
     pclose(fp);
     return NULL;
 }
-
-void processCategories(int storeNum, const char* storePath, UserShoppingList* shoppingList){//making process for categories
+void processCategories(int storeNum, const char* storePath, UserShoppingList* shoppingList){
+    char** categories = getSubDirectories(storePath);
+    for(int i = 0; i < categoryCount; i++){
+        pid_t pidCategory = vfork();
+        if(pidCategory==0){
+            char** prroductFiles = getsubfiles(categories[i]);
+            for(int j =0; j<FILESNUMBER; j++){
+                
+            }
+        }
+    }
+}
+/*void processCategories(int storeNum, const char* storePath, UserShoppingList* shoppingList){//making process for categories
    char** categories = getSubDirectories(storePath);
 
     pthread_t threads[categoryCount*shoppingList->productCount];
 
     for(int i = 0; i < categoryCount; i++){
-        threadInput inputs[shoppingList->productCount];
+        threadInput inputs[PRO_COUNT];
         int totalCost = 0;
         pid_t pidCategory = vfork();
         if(pidCategory == 0){
@@ -314,12 +325,12 @@ void processCategories(int storeNum, const char* storePath, UserShoppingList* sh
                 char productFile[1000],categoryFile[1000];
                 categories[i][strcspn(categories[i], "\n")] = 0;
                 Product foundProduct[50];
-                inputs[j].categoryAddress=categories[i];
+                inputs[j].fileAddress=categories[i];
                 inputs[j].name = shoppingList->products[1][j].name;
                 printf("im in for order %d %s\n",j, shoppingList->products[1][j].name);
                 inputs[j].product = &foundProduct[j];
                 
-                pthread_create(&threads[j*categoryCount+i], NULL, (&searchProductInCategory),(void*) &inputs[j]);
+                pthread_create(&threads[j*categoryCount+i], NULL, (&readProductFromFile),(void*) &inputs[j]);
                 if((foundProduct[j].foundFlag) == 1){ // found product in category store
                    //printf("store %d : flag : %s", storeNum, foundProduct.foundFlag);
                    printf("found product: %s in %s\n",shoppingList->products[1][j].name, categories[i]);
@@ -345,6 +356,7 @@ void processCategories(int storeNum, const char* storePath, UserShoppingList* sh
    }
    printf("i finished the categories??????\n");
 }
+*/
 
 void processStores(UserShoppingList* shoppingList){ //making process for stores
     char** stores = getSubStoreDirectories("Dataset");
@@ -368,6 +380,7 @@ void processStores(UserShoppingList* shoppingList){ //making process for stores
    free(stores);
    sem_destroy(&sem);
 }
+
 
 
 void processUser(UserShoppingList* shoppingList){
