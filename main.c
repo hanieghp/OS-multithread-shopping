@@ -13,6 +13,13 @@
 #include <sys/wait.h>
 #include <bits/pthreadtypes.h>
 #include <ctype.h>
+#include <raylib.h>
+// graphic
+const int screenWidth = 800;
+const int screenHeight = 450;
+#define INPUT_FIELD_HEIGHT 40
+#define INPUT_FIELD_WIDTH 300
+#define INPUT_FIELD_X ((screenWidth - INPUT_FIELD_WIDTH) / 2)
 
 
 #define MAX_PRODUCTS 80
@@ -54,12 +61,18 @@ typedef struct {
   int entity[MAX_PRODUCTS];
 } UserShoppingList;
 
+typedef enum {
+    STATE_USER_ID,
+    STATE_PRODUCT_COUNT,
+    STATE_PRODUCT_DETAILS,
+    STATE_BUDGET,
+    STATE_COMPLETE
+} UIState;
 
 typedef struct { //shared memory structure
    UserShoppingList users[maxUser];
    int activeUserCount;
 } SharedMemoryData;
-
 
 typedef struct {
    char *categoryAddress;
@@ -68,12 +81,156 @@ typedef struct {
 } threadInput;
 
 
-SharedMemoryData* sharedData = NULL;
 
 //define all functions
 void processCategories(int storeNum, const char* storePath, UserShoppingList* shoppingList);
 void processStroes(UserShoppingList* shoppingList);
 void processUser(UserShoppingList* shoppingList);
+
+void DrawInputField(int x, int y, int width, int height, const char* label, const char* input){
+    DrawRectangle(x, y, width, height, LIGHTGRAY);
+    DrawRectangleLines(x, y, width, height, DARKGRAY);
+
+    DrawText(label, x, y - 20, 20, BLACK);
+    DrawText(input, x + 5, y + 10, 20, BLACK);
+}
+
+void HandleTextInput(char* inputBuffer, int* cursorPosition, int maxLength) {
+    int key = GetCharPressed();
+    
+    // Backspace
+    if (IsKeyPressed(KEY_BACKSPACE)) {
+        if (*cursorPosition > 0) {
+            (*cursorPosition)--;
+            inputBuffer[*cursorPosition] = '\0';
+        }
+    }
+    
+    // Text input
+    if (key >= 32 && key <= 125 && *cursorPosition < maxLength - 1) {
+        inputBuffer[*cursorPosition] = (char)key;
+        (*cursorPosition)++;
+        inputBuffer[*cursorPosition] = '\0';
+    }
+}
+
+UserShoppingList* GraphicalUserInput() {
+    UserShoppingList* shoppingList = malloc(sizeof(UserShoppingList));
+    memset(shoppingList, 0, sizeof(UserShoppingList));
+    
+    UIState currentState = STATE_USER_ID;
+    char inputBuffer[100] = {0};
+    int cursorPosition = 0;
+    int currentProductIndex = 0;
+    
+    InitWindow(screenWidth, screenHeight, "kh");
+    SetTargetFPS(60);
+
+
+    while (!WindowShouldClose()) {
+        BeginDrawing();
+        ClearBackground(RAYWHITE);
+
+        switch (currentState) {
+            case STATE_USER_ID:
+                DrawText("Enter User ID:", 50, 100, 20, BLACK);
+                DrawRectangleLines(50, 150, 300, 40, BLACK);
+                DrawText(inputBuffer, 60, 160, 20, BLACK);
+                
+                HandleTextInput(inputBuffer, &cursorPosition, MAX_NAME_LEN);
+                
+                if (IsKeyPressed(KEY_ENTER) && strlen(inputBuffer) > 0) {
+                    strcpy(shoppingList->userID, inputBuffer);
+                    memset(inputBuffer, 0, sizeof(inputBuffer));
+                    cursorPosition = 0;
+                    currentState = STATE_PRODUCT_COUNT;
+                }
+                break;
+
+
+            case STATE_PRODUCT_COUNT:
+                DrawText("Enter Number of Products:", 50, 100, 20, BLACK);
+                DrawRectangleLines(50, 150, 300, 40, BLACK);
+                DrawText(inputBuffer, 60, 160, 20, BLACK);
+                
+                HandleTextInput(inputBuffer, &cursorPosition, 3);
+                
+                if (IsKeyPressed(KEY_ENTER) && strlen(inputBuffer) > 0) {
+                    shoppingList->productCount = atoi(inputBuffer);
+                    memset(inputBuffer, 0, sizeof(inputBuffer));
+                    cursorPosition = 0;
+                    currentState = STATE_PRODUCT_DETAILS;
+                }
+                break;
+
+
+            case STATE_PRODUCT_DETAILS:
+                DrawText(TextFormat("Enter Product %d Name:", currentProductIndex + 1), 50, 100, 20, BLACK);
+                DrawRectangleLines(50, 150, 300, 40, BLACK);
+                DrawText(inputBuffer, 60, 160, 20, BLACK);
+                
+                HandleTextInput(inputBuffer, &cursorPosition, MAX_NAME_LEN);
+
+                if (IsKeyPressed(KEY_ENTER) && strlen(inputBuffer) > 0) {
+                    strcpy(shoppingList->products[1][currentProductIndex].name, inputBuffer);
+                    memset(inputBuffer, 0, sizeof(inputBuffer));
+                    cursorPosition = 0;
+                    //printf("innnnnnnn");
+                    
+                    while(1){
+                        BeginDrawing();
+                        ClearBackground(RAYWHITE);
+
+                        DrawText(TextFormat("Enter Product %d Quantity:", currentProductIndex + 1), 50, 200, 20, BLACK);
+                        DrawRectangleLines(50, 250, 300, 40, BLACK);
+                        DrawText(inputBuffer, 60, 260, 20, BLACK);
+                        EndDrawing();
+
+                        HandleTextInput(inputBuffer, &cursorPosition, 3);
+
+                        if(IsKeyPressed(KEY_ENTER) && strlen(inputBuffer) > 0){
+                            shoppingList->entity[currentProductIndex] = atoi(inputBuffer);
+                            memset(inputBuffer, 0, sizeof(inputBuffer));
+                            cursorPosition = 0;
+
+                            currentProductIndex++;
+                            if (currentProductIndex >= shoppingList->productCount) {
+                            currentState = STATE_BUDGET;
+                            }
+                            break;
+                        }
+                    }
+                }
+                break;
+            case STATE_BUDGET:
+                DrawText("Enter Budget Cap (-1 for no cap):", 50, 100, 20, BLACK);
+                DrawRectangleLines(50, 150, 300, 40, BLACK);
+                DrawText(inputBuffer, 60, 160, 20, BLACK);
+                
+                HandleTextInput(inputBuffer, &cursorPosition, 20);
+                
+                if (IsKeyPressed(KEY_ENTER) && strlen(inputBuffer) > 0) {
+                    shoppingList->budgetCap = atof(inputBuffer);
+                    shoppingList->userPID = getpid();
+                    currentState = STATE_COMPLETE;
+                }
+                break;
+
+
+            case STATE_COMPLETE:
+                CloseWindow();
+                return shoppingList;
+        }
+
+
+        EndDrawing();
+    }
+
+
+    CloseWindow();
+    free(shoppingList);
+    return NULL;
+}
 
 char** getSubStoreDirectories(const char *dir){
   int count = 0;
@@ -98,7 +255,6 @@ char** getSubStoreDirectories(const char *dir){
   }
   pclose(fp);
   }
-  
   return categories;
 }
 
@@ -108,11 +264,9 @@ Product* readProductFromFile(const char* filepath) {
        return NULL;
    }
 
-
    Product* product = malloc(sizeof(Product));
    memset(product, 0, sizeof(Product));
    char line[200];
-
 
    while (fgets(line, sizeof(line), file)) {
        if (strncmp(line, "Name:", 5) == 0) {
@@ -150,12 +304,8 @@ UserShoppingList* read_user_shopping_list() {
    for (int i = 0; i < shoppingList->productCount; i++) {
        printf("Product %d Name: ", i + 1);
        scanf("%99s", shoppingList->products[1][i].name);
-       //scanf("%99s", shoppingList->products[2][i].name);
-       //scanf("%99s", shoppingList->products[3][i].name);
        printf("Product %d Quantity: ", i + 1);
        scanf("%d", &shoppingList->entity[i]);
-       //scanf("%d", &shoppingList->products[2][i].entity);
-       //scanf("%d", &shoppingList->products[3][i].entity);
    }
    printf("Enter Budget Cap (-1 for no cap): ");
    scanf("%lf", &shoppingList->budgetCap);
@@ -218,26 +368,6 @@ void listStoreProducts(const char* storePath) {
    closedir(dir);
 }
 
-int initializeSharedMemory() {
-   int shmid = shmget(SHM_KEY, sizeof(SharedMemoryData), IPC_CREAT | 0666);
-   if (shmid == -1) {
-       perror("shmget failed");
-       return -1;
-   }
-
-
-   sharedData = (SharedMemoryData*)shmat(shmid, NULL, 0);
-   if (sharedData == (void*) -1) {
-       perror("shmat failed");
-       return -1;
-   }
-
-
-   // Initialize shared memory
-   memset(sharedData, 0, sizeof(SharedMemoryData));
-   return shmid;
-}
-
 char** getSubDirectories(const char *dir){
    int count = 0;
    char **categories = malloc(sizeof(char *) * 1000);      
@@ -260,8 +390,6 @@ char** getSubDirectories(const char *dir){
 }
 
 void* searchProductInCategory(void* args){
-   //return NULL;
-   // neeed to implement
    printf("in thread with tid : %ld\n", pthread_self());
    DIR *dir;
    struct dirent *entry;
@@ -292,7 +420,7 @@ void* searchProductInCategory(void* args){
             return NULL;   
         }
     }
-    printf("i finished the files????\n");             
+    //printf("i finished the files????\n");             
     pclose(fp);
     return NULL;
 }
@@ -343,7 +471,6 @@ void processCategories(int storeNum, const char* storePath, UserShoppingList* sh
    for(int i = 0; i < categoryCount; i++){
         wait(NULL);
    }
-   printf("i finished the categories??????\n");
 }
 
 void processStores(UserShoppingList* shoppingList){ //making process for stores
@@ -410,67 +537,38 @@ void processUser(UserShoppingList* shoppingList){
         }
     }
 
-
    // Clean up semaphores
    sem_close(search_sem);
    sem_close(result_sem);
    sem_unlink(SEM_PRODUCT_SEARCH);
    sem_unlink(SEM_RESULT_UPDATE);
-
-
 }
-
-int getValue (int price, int score) {
-    return score/price;
-}
-
-int getValueOfStore(Product products[]){
-    int value = 0;
-    for (int i = 0; i < sizeof(products)/sizeof(products[0]); i++){
-        value+=getValue(products[i].price, products[i].score);
-    }
-    return value;
-}
-
-/*int getBestStore (Product products[][]){
-    int best = 0;
-    for (int i = 0; i < storeCount; i++){
-        if(getValueOfStore(products[i])){
-
-        }
-    } 
-}*/
 
 int main(){
-
-   /*int shmID = initializeSharedMemory();
-   if(shmID == -1){
-       return 1;
-   }
-*/
-   while (1) {
-       pid_t pidUser = vfork(); //process user
-
-
-       if(pidUser < 0){
-           perror("Failed to fork for User\n");
-           break;
-       }
-       else if(pidUser == 0){
-            pthread_t threads[storeCount];
-            UserShoppingList* shoppingList = read_user_shopping_list();
-            processUser(shoppingList);
-                // show user its choices
-            //pthread_create(&threads[1], NULL, &getProductsValue, shoppingList->products);
-            free(shoppingList);
-            exit(0);
-       }
-   }
+    UserShoppingList* shoppingList = GraphicalUserInput();
+    
+    if (shoppingList) {
+        // Print out the collected information for verification
+        printf("User ID: %s\n", shoppingList->userID);
+        printf("Product Count: %d\n", shoppingList->productCount);
+        
+        for (int i = 0; i < shoppingList->productCount; i++) {
+            printf("Product %d: %s (Quantity: %d)\n", 
+                   i+1, 
+                   shoppingList->products[1][i].name, 
+                   shoppingList->entity[i]);
+        }
+        
+        printf("Budget Cap: %.2f\n", shoppingList->budgetCap);
 
 
-   printf("Exiting...\n");
-   //detach and remove shared memory
-   //shmdt(sharedData);
-   //shmctl(shmID, IPC_RMID, NULL);
-   return 0;
+        // Continue with the rest of your existing processing logic
+        processUser(shoppingList);
+        
+        free(shoppingList);
+    }
+
+
+    return 0;
+
 }
