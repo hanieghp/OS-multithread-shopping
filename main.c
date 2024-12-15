@@ -24,10 +24,9 @@
 #define categoryCount 8
 #define maxUser 10
 
-
 #define SEM_PRODUCT_SEARCH "/product_search_sem"
 #define SEM_RESULT_UPDATE "/result_update_sem"
-#define SEM_INVENTORY_UPDATE "/inventory_update_sem"
+#define SEM_RATING_UPDATE "/rating_update_sem"
 #define SEM_SHOPPING_LIST "/shopping_list_sem"
 
 #define SHM_KEY 0x1234
@@ -64,7 +63,7 @@ typedef struct {
 
 sem_t *g_search_sem = NULL;
 sem_t *g_result_sem = NULL;
-sem_t *g_inventory_sem = NULL;
+sem_t *g_rating_sem = NULL;
 sem_t *g_shopping_list_sem = NULL;
 
 pthread_mutex_t liveLock = PTHREAD_MUTEX_INITIALIZER;
@@ -101,6 +100,50 @@ char** getSubStoreDirectories(const char *dir){
   return categories;
 }
 
+char** getSubDirectories(const char *dir){
+   int count = 0;
+   char **categories = malloc(sizeof(char *) * 1000);      
+   char subDir[MAX_PATH_LEN], command[MAX_NAME_LEN];
+   snprintf(command, sizeof(command), "find %s -maxdepth 1 -type d", dir);
+   FILE *fp = popen((command), "r");
+  
+   if (!fp) {
+       perror("Error opening files");
+       if (fp) fclose(fp);
+       return NULL;
+   }
+   fgets(subDir, sizeof(subDir), fp);
+   while(fgets(subDir, sizeof(subDir), fp)!=NULL){
+       categories[count] = strdup(subDir);
+       count++;                
+   }
+   pclose(fp);
+   return categories;
+}
+
+char ** getsubfiles(char *dir){
+    int count = 0;
+    char **files = malloc(sizeof(char *) * 1000); 
+    char filepath[MAX_PATH_LEN], command[1000];
+    snprintf(command, sizeof(command), "find %s -maxdepth 1 -type f", dir);
+    FILE *fp = popen((command), "r");
+    if (!fp) {
+       perror("Error opening files");
+       if (fp) fclose(fp);
+       return NULL;
+    }
+    fgets(filepath, sizeof(filepath), fp);
+    while(fgets(filepath, sizeof(filepath), fp)!=NULL){
+        filepath[strcspn(filepath, "\n")] = 0;
+        files[count] = strdup(filepath);
+        //printf("file : %s", files[count]);
+        count++; 
+    }
+    pclose(fp);
+    return files;
+}
+
+// Function to read data from dataset file
 Product* readProductFromFile(const char* filepath) {
    FILE* file = fopen(filepath, "r");
    if (!file) {
@@ -129,7 +172,7 @@ Product* readProductFromFile(const char* filepath) {
    return product;
 }
 
-
+// Function to read user's shopping list
 UserShoppingList* read_user_shopping_list() {
    UserShoppingList* shoppingList = malloc(sizeof(UserShoppingList));
    memset(shoppingList, 0, sizeof(UserShoppingList));
@@ -211,34 +254,63 @@ void listStoreProducts(const char* storePath) {
    }
    closedir(dir);
 }
+char* findProductFilePath(const char* productName) {
+    char** stores = getSubStoreDirectories("Dataset");
+    char* foundPath = NULL;
+    for (int i = 0; i < storeCount; i++) {
+        stores[i][strcspn(stores[i], "\n")] = 0;
+        char** categories = getSubDirectories(stores[i]);
+        for (int j = 0; categories[j] != NULL; j++) {
+            categories[j][strcspn(categories[j], "\n")] = 0;
+            char** productFiles = getsubfiles(categories[j]);
+            for (int k = 0; productFiles[k] != NULL; k++) {
+                Product* tempProduct = readProductFromFile(productFiles[k]);
+                if (tempProduct && strcasecmp(tempProduct->name, productName) == 0) {
+                    foundPath = strdup(productFiles[k]);
+                    free(tempProduct);
+                    /*for (int m = 0; productFiles[m] != NULL; m++) {
+                        free(productFiles[m]);
+                    }
+                    free(productFiles);
+                    
+                    for (int m = 0; categories[m] != NULL; m++) {
+                        free(categories[m]);
+                    }
+                    free(categories);
+                    
+                    for (int m = 0; stores[m] != NULL; m++) {
+                        free(stores[m]);
+                    }
+                    free(stores);*/
+                    
+                    return foundPath;
+                }
+                //free(tempProduct);
+            }
+            for (int m = 0; productFiles[m] != NULL; m++) {
+                free(productFiles[m]);
+            }
+            free(productFiles);
+        }
+        for (int m = 0; categories[m] != NULL; m++) {
+            free(categories[m]);
+        }
+        free(categories);
+    }
 
+    for (int m = 0; stores[m] != NULL; m++) {
+        free(stores[m]);
+    }
+    free(stores);
 
-char** getSubDirectories(const char *dir){
-   int count = 0;
-   char **categories = malloc(sizeof(char *) * 1000);      
-   char subDir[MAX_PATH_LEN], command[MAX_NAME_LEN];
-   snprintf(command, sizeof(command), "find %s -maxdepth 1 -type d", dir);
-   FILE *fp = popen((command), "r");
-  
-   if (!fp) {
-       perror("Error opening files");
-       if (fp) fclose(fp);
-       return NULL;
-   }
-   fgets(subDir, sizeof(subDir), fp);
-   while(fgets(subDir, sizeof(subDir), fp)!=NULL){
-       categories[count] = strdup(subDir);
-       count++;                
-   }
-   pclose(fp);
-   return categories;
+    return NULL;
 }
 
 double calculateProductValue(Product* product){
     if(product->price <= 0){
         return 0;
     }
-    printf("score is: %.2f and price is: %.2f\n",product->score ,product->price);
+    //printf("score is: %.2f and price is: %.2f\n",product->score ,product->price);
     return product->score * product->price;
 }
 
@@ -247,29 +319,160 @@ void* calculateStoreBaskettValue(void* args){
 
     for(int i = 0; i < MAX_storeCount; i++){
         double totalBasketValue = 0.0;
-        int validProductCount = 0;
+        int totalCost = 0;
+        int allProductFound = 1;
 
         for(int j = 0; j < shoppingList->productCount; j++){
             Product* curProduct = &(shoppingList->products[i][j]);
 
             if(curProduct->foundFlag){
-                double productValue = calculateProductValue(curProduct) * shoppingList->entity[j];
+                double productValue = calculateProductValue(curProduct);
+
+                if(curProduct->entity >= shoppingList->entity[j]){
                 totalBasketValue += productValue;
-                validProductCount++;
+                totalCost += curProduct->price * shoppingList->entity[j];
+                }
+                else{
+                    allProductFound = 0;
+                    printf("store %d just have %d, you want %d, you can't buy from\n", i+1, curProduct->entity, shoppingList->entity[j]);
+                    break;
+                }
+            }
+            else{
+                allProductFound = 0;
+                printf("store %d doesn't have %s, you can't buy from\n", i+1, curProduct->name);
+                break;
+            }
+        }
+        if(allProductFound){
+            //printf("allfound\n");
+            if(shoppingList->budgetCap == -1 || totalCost <= shoppingList->budgetCap){
+                shoppingList->store_match_count[i] = 1;
+                shoppingList->totalCost = totalCost;
             }
         }
         sem_wait(g_shopping_list_sem);
-        shoppingList->totalCost = totalBasketValue;
-        shoppingList->store_match_count[i] = validProductCount;
+        //shoppingList->totalCost = totalBasketValue;
+        //shoppingList->store_match_count[i] = validProductCount;
 
-        printf("store %d basket value: %.2f\n", i+1, totalBasketValue);
-        printf("match product in store %d: %d out of %d\n", i+1, validProductCount, shoppingList->productCount);
-        printf("TID: %ld and PID: %d\n", pthread_self(), getpid());
+        //printf("store %d basket value: %.2f\n", i+1, totalBasketValue);
+        printf("in calculating: TID: %ld and PID: %d\n", pthread_self(), getpid());
 
-        if(shoppingList->budgetCap > 0 && totalBasketValue > shoppingList->budgetCap){
-            printf("store %d total cost %.2f but budget cap %.2f\n", i+1, totalBasketValue, shoppingList->budgetCap);
-        }
         sem_post(g_shopping_list_sem);
+    }
+    return NULL;
+}
+
+void updateProductRating(const char* productName, double newRating) {
+    g_rating_sem = sem_open(SEM_RATING_UPDATE, O_CREAT, 0644, 1);
+    if (g_rating_sem == SEM_FAILED) {
+        perror("Semaphore creation failed for rating update");
+        return;
+    }
+
+    char* filePath = findProductFilePath(productName);
+    //printf("filepath: %s\n",filePath);
+    if (!filePath) {
+        printf("Product %s not found\n", productName);
+        sem_close(g_rating_sem);
+        sem_unlink(SEM_RATING_UPDATE);
+        return;
+    }
+
+    Product* product = readProductFromFile(filePath);
+    if (!product) {
+        printf("Failed to read product file\n");
+        free(filePath);
+        sem_close(g_rating_sem);
+        sem_unlink(SEM_RATING_UPDATE);
+        return;
+    }
+    sem_wait(g_rating_sem);
+
+    double oldScore = product->score;
+    product->score = (oldScore + newRating) / 2.0;
+    time_t now;
+    time(&now);
+
+    char formattedTime[20];
+    strftime(formattedTime, sizeof(formattedTime), "%Y-%m-%d %H:%M:%S", localtime(&now));
+
+    FILE* file = fopen(filePath, "w");
+    if (file) {
+        fprintf(file, "Name: %s\n", product->name);
+        fprintf(file, "Price: %.2f\n", product->price);
+        fprintf(file, "Score: %.2f\n", product->score);
+        fprintf(file, "Entity: %d\n", product->entity);
+        fprintf(file, "Last Modified: %s\n", formattedTime);
+        fclose(file);
+        printf("Product rating updated successfully\n");
+        printf("RATE: TID: %ld and PID: %d\n", pthread_self(), getpid());
+        printf("score is %.2f\n", product->score);
+
+    } else {
+        perror("Failed to update product file");
+    }
+    sem_post(g_rating_sem);
+
+    free(product);
+    free(filePath);
+
+    sem_close(g_rating_sem);
+    sem_unlink(SEM_RATING_UPDATE);
+}
+
+
+void* rateProducts(void* args) {
+    UserShoppingList* shoppingList = (UserShoppingList*)args;
+
+    printf("\nPlease rate the products you've purchased:\n");
+    
+    for (int i = 0; i < shoppingList->productCount; i++) {
+        double rating;
+        for (int j = 0; j < storeCount; j++) {
+            if (shoppingList->products[j][i].foundFlag) {
+                printf("Rate product %s (1-5 stars): ", shoppingList->products[j][i].name);
+                scanf("%lf", &rating);
+
+                while (rating < 1 || rating > 5) {
+                    printf("Invalid rating. Please enter a rating between 1 and 5: ");
+                    scanf("%lf", &rating);
+                }
+                updateProductRating(shoppingList->products[j][i].name, rating);
+            }
+        }
+    }
+    return NULL;
+}
+
+void* updateFinalShoppingList(void* arg){
+    UserShoppingList* shoppingList = (UserShoppingList*)arg;
+    int bestStore = -1;
+    double maxValue = -1.0;
+
+    for(int i = 0; i < storeCount; i++){
+        if(shoppingList->store_match_count[i]){
+            double storBasketValue = 0.0;
+
+            for(int j = 0; j < shoppingList->productCount; j++){
+                Product* curProduct = &shoppingList->products[i][j];
+
+                if(curProduct->foundFlag){
+                    storBasketValue += calculateProductValue(curProduct);
+                }
+            }
+            if(storBasketValue > maxValue){
+                maxValue = storBasketValue;
+                bestStore = i;
+            }
+        }
+    }
+    if(bestStore != -1){
+        memcpy(shoppingList->products[0], shoppingList->products[bestStore], sizeof(Product) * shoppingList->productCount);
+
+        shoppingList->processingComplete = 1;
+        printf("Final :TID: %ld and PID: %d\n", pthread_self(), getpid());
+        printf("Best store you buy is: %d", bestStore+1);
     }
     return NULL;
 }
@@ -287,6 +490,7 @@ void* searchProductInCategory(void* args){
         if (product && strcasecmp(product->name, proNames[i]) == 0){
             sem_wait(g_result_sem);
             printf("i found it in %s!!!!\n", input->filepath);
+            printf("TID found: %ld\n",pthread_self());
             memcpy(input->product->name, product->name, sizeof(product->name));
             memcpy(input->product->lastModified, product->lastModified, sizeof(product->lastModified));
             input->product->price = product->price;
@@ -308,29 +512,6 @@ void* searchProductInCategory(void* args){
     free(product);
     return NULL;
 }
-
-char ** getsubfiles(char *dir){
-    int count = 0;
-    char **files = malloc(sizeof(char *) * 1000); 
-    char filepath[MAX_PATH_LEN], command[1000];
-    snprintf(command, sizeof(command), "find %s -maxdepth 1 -type f", dir);
-    FILE *fp = popen((command), "r");
-    if (!fp) {
-       perror("Error opening files");
-       if (fp) fclose(fp);
-       return NULL;
-    }
-    fgets(filepath, sizeof(filepath), fp);
-    while(fgets(filepath, sizeof(filepath), fp)!=NULL){
-        filepath[strcspn(filepath, "\n")] = 0;
-        files[count] = strdup(filepath);
-        //printf("file : %s", files[count]);
-        count++; 
-    }
-    pclose(fp);
-    return files;
-}
-
 
 void processCategories(int storeNum, const char* storePath, UserShoppingList* shoppingList) { 
     pthread_t threads[1000]; 
@@ -411,22 +592,28 @@ void processUser(UserShoppingList* shoppingList){
    //semaphore
    g_search_sem = sem_open(SEM_PRODUCT_SEARCH, O_CREAT, 0644, 1);
    g_result_sem = sem_open(SEM_RESULT_UPDATE, O_CREAT, 0644, 1);
-   g_inventory_sem = sem_open(SEM_INVENTORY_UPDATE, O_CREAT, 0644, 1);
    g_shopping_list_sem = sem_open(SEM_SHOPPING_LIST, O_CREAT, 0644, 1);
   
    if (g_search_sem == SEM_FAILED || g_result_sem == SEM_FAILED ||
-       g_inventory_sem == SEM_FAILED || g_shopping_list_sem == SEM_FAILED) {
+       g_shopping_list_sem == SEM_FAILED) {
        perror("Semaphore creation failed");
        return;
    }
 
    processStores(shoppingList);
+
    pthread_t basketValueThread;
-   if(pthread_create(&basketValueThread ,NULL, calculateStoreBaskettValue, (void*)shoppingList) != 0){
-    perror("faile to create basekt value");
-    return;
-   }
+   pthread_t ratingThread;
+   pthread_t finalListThread;
+
+   pthread_create(&basketValueThread ,NULL, calculateStoreBaskettValue, (void*)shoppingList);
    pthread_join(basketValueThread, NULL);
+
+   pthread_create(&ratingThread, NULL, rateProducts, (void*)shoppingList);
+   pthread_join(ratingThread, NULL);
+
+   pthread_create(&finalListThread, NULL, updateFinalShoppingList, shoppingList);
+   pthread_join(finalListThread, NULL);
 
     printf("\nProcessed Shopping List for User %s:\n", shoppingList->userID);
     for (int i = 0; i < shoppingList->productCount; i++) {
@@ -453,12 +640,10 @@ void processUser(UserShoppingList* shoppingList){
    // Clean up semaphores
    sem_close(g_search_sem);
    sem_close(g_result_sem);
-   sem_close(g_inventory_sem);
    sem_close(g_shopping_list_sem);
 
    sem_unlink(SEM_PRODUCT_SEARCH);
    sem_unlink(SEM_RESULT_UPDATE);
-   sem_unlink(SEM_INVENTORY_UPDATE);
    sem_unlink(SEM_SHOPPING_LIST);
 }
 
