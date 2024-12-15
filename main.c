@@ -13,6 +13,7 @@
 #include <sys/wait.h>
 #include <bits/pthreadtypes.h>
 #include <ctype.h>
+#include <stdbool.h>
 
 #define FILESNUMBER 79
 #define MAX_PRODUCTS 80
@@ -230,6 +231,11 @@ char** getSubDirectories(const char *dir){
    return categories;
 }
 
+
+pthread_mutex_t liveLock = PTHREAD_MUTEX_INITIALIZER;
+bool stopThread = false;
+
+
 void* searchProductInCategory(void* args){
     //printf("in thread with tid : %ld\n", pthread_self());
     threadInput *input = (threadInput *)args;
@@ -251,6 +257,14 @@ void* searchProductInCategory(void* args){
             input->product->foundFlag = 1;
             input->proNum = i;
             sem_post(g_result_sem);
+            /*while(true){
+                pthread_mutex_lock(&liveLock);
+                if(stopThread){
+                    pthread_mutex_unlock(&liveLock);
+                    break;
+                }
+                pthread_mutex_unlock(&liveLock);
+            }*/
         }
     }
     free(product);
