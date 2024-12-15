@@ -14,13 +14,13 @@
 #include <bits/pthreadtypes.h>
 #include <ctype.h>
 
-
+#define FILESNUMBER 79
 #define MAX_PRODUCTS 80
 #define MAX_NAME_LEN 100
 #define MAX_PATH_LEN 1000
 #define storeCount 3
 #define MAX_storeCount 3
-#define categoryCount 8
+#define categoryCount 3
 #define maxUser 10
 
 
@@ -62,8 +62,10 @@ typedef struct { //shared memory structure
 
 
 typedef struct {
-   char *categoryAddress;
-   char *name;
+    int proNum;
+    int proCount;
+   char *filepath;
+   char **names;
    Product *product;
 } threadInput;
 
@@ -260,54 +262,100 @@ char** getSubDirectories(const char *dir){
 }
 
 void* searchProductInCategory(void* args){
-   //return NULL;
-   // neeed to implement
-   printf("in thread with tid : %ld\n", pthread_self());
-   DIR *dir;
-   struct dirent *entry;
-   char categoryPath[MAX_PATH_LEN], command[1000];
+    //printf("in thread with tid : %ld\n", pthread_self());
     threadInput *input = (threadInput *)args;
-    //printf("input : %s %s\n",input-> input->name);
-    snprintf(command, sizeof(command), "find %s -maxdepth 1 -type f", input->categoryAddress);
-    FILE *fp = popen((command), "r");
-    if (!fp) {
-       perror("Error opening files");
-       if (fp) fclose(fp);
-       return NULL;
-    }
-    char filepath[MAX_PATH_LEN];
-    fgets(filepath, sizeof(filepath), fp);
-    while(fgets(filepath, sizeof(filepath), fp)!=NULL){
-        filepath[strcspn(filepath, "\n")] = 0;
-        Product* product = readProductFromFile(filepath);
-        if (product && strcasecmp(product->name, input->name) == 0){
-            printf("i found it in %s!!!!\n", filepath);
+    char** proNames = input->names;
+    Product* product = readProductFromFile(input->filepath);
+    printf("name : %s, %s\n", product->name, input->filepath);
+    for(int i = 0; i < input->proCount; i++){
+        //printf("file name : %s", proNames[i]);
+        if (product && strcasecmp(product->name, proNames[i]) == 0){
+            printf("i found it in %s!!!!\n", input->filepath);
             memcpy(input->product->name, product->name, sizeof(product->name));
             memcpy(input->product->lastModified, product->lastModified, sizeof(product->lastModified));
             input->product->price = product->price;
             input->product->score = product->score;
             input->product->entity = product->entity;
             input->product->foundFlag = 1;
-            pclose(fp);
-            return NULL;   
+            input->proNum = i;
         }
     }
-    printf("i finished the files????\n");             
-    pclose(fp);
     return NULL;
 }
+
+char ** getsubfiles(char *dir){
+    int count = 0;
+    char **files = malloc(sizeof(char *) * 1000); 
+    char filepath[MAX_PATH_LEN], command[1000];
+    snprintf(command, sizeof(command), "find %s -maxdepth 1 -type f", dir);
+    FILE *fp = popen((command), "r");
+    if (!fp) {
+       perror("Error opening files");
+       if (fp) fclose(fp);
+       return NULL;
+    }
+    fgets(filepath, sizeof(filepath), fp);
+    while(fgets(filepath, sizeof(filepath), fp)!=NULL){
+        filepath[strcspn(filepath, "\n")] = 0;
+        files[count] = strdup(filepath);
+        count++; 
+    }
+    pclose(fp);
+    return files;
+}
+
 void processCategories(int storeNum, const char* storePath, UserShoppingList* shoppingList){
+    pthread_t threads[1000];
     char** categories = getSubDirectories(storePath);
+    int count = 0;
+    char** productNames = malloc(shoppingList->productCount*sizeof(char*));
+    for(int k=0; k < shoppingList->productCount; k++){
+        productNames[k] = shoppingList->products[1][k].name;
+    }
     for(int i = 0; i < categoryCount; i++){
         pid_t pidCategory = vfork();
         if(pidCategory==0){
-            char** prroductFiles = getsubfiles(categories[i]);
-            for(int j =0; j<FILESNUMBER; j++){
-                
+            
+            printf("category : %s\n", categories[i]);
+            categories[i][strcspn(categories[i], "\n")] = 0;
+            char** productFiles = getsubfiles(categories[i]);
+            int numberF = sizeof(productFiles)/sizeof(productFiles[0]);
+            threadInput inputs[numberF];
+            for(int j =0; j<numberF; j++){
+                if(strcmp(productFiles[j], "") != 0){
+                    Product foundProduct[50];
+                    inputs[j].filepath=productFiles[j];
+                    inputs[j].proCount = shoppingList->productCount;
+                    inputs[j].names = &productNames;
+                    inputs[j].product = &foundProduct[j];
+                    pthread_create(&threads[j*categoryCount+i], NULL, (&searchProductInCategory),(void*) &inputs[j]);
+                    if((inputs[j].product->foundFlag) == 1){ // found product in category store
+                        //printf("store %d : flag : %s", storeNum, foundProduct.foundFlag);
+                        printf("found product: %s in %s\n",shoppingList->products[1][j].name, categories[i]);
+                        memcpy(&(shoppingList->products[storeNum][inputs[j].proNum]), &foundProduct[j], sizeof(Product));
+                    }
+    
+                }
             }
-        }
+            for (int k = 0; k < numberF; k++){
+               free(productFiles[k]);
+            }
+            free(productFiles);
+            
+            for(int j =0 ; j < numberF; j++){
+                pthread_join(threads[j], NULL);
+            }  
+            exit(0);
+            
+        }else if(pidCategory < 0){
+           perror("Failed to fork for category\n");
+       }
     }
+    free(productNames);
+    free(categories);
+    
 }
+
 /*void processCategories(int storeNum, const char* storePath, UserShoppingList* shoppingList){//making process for categories
    char** categories = getSubDirectories(storePath);
 
@@ -429,38 +477,10 @@ void processUser(UserShoppingList* shoppingList){
    sem_close(result_sem);
    sem_unlink(SEM_PRODUCT_SEARCH);
    sem_unlink(SEM_RESULT_UPDATE);
-
-
 }
-
-int getValue (int price, int score) {
-    return score/price;
-}
-
-int getValueOfStore(Product products[]){
-    int value = 0;
-    for (int i = 0; i < sizeof(products)/sizeof(products[0]); i++){
-        value+=getValue(products[i].price, products[i].score);
-    }
-    return value;
-}
-
-/*int getBestStore (Product products[][]){
-    int best = 0;
-    for (int i = 0; i < storeCount; i++){
-        if(getValueOfStore(products[i])){
-
-        }
-    } 
-}*/
 
 int main(){
 
-   /*int shmID = initializeSharedMemory();
-   if(shmID == -1){
-       return 1;
-   }
-*/
    while (1) {
        pid_t pidUser = vfork(); //process user
 
