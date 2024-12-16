@@ -403,6 +403,10 @@ void* calculateStoreBaskettValue(void* args){
                }
                shoppingList->store_match_count[bestStore] = 1;
                shoppingList->totalCost = totalCost;
+               if(check_user_store_in_file(file_path, shoppingList->userID, bestStore)){
+                    printf("wow , good for you ! youll get discount from us!");
+                    shoppingList->totalCost = shoppingList->totalCost*0.9;
+               }
            }
        }
        //printf("store %d basket value: %.2f\n", i+1, totalBasketValue);
@@ -415,6 +419,30 @@ void* calculateStoreBaskettValue(void* args){
    return NULL;
 }
 
+bool check_user_store_in_file(const char *filePath, int userID, int storeNum) {
+    FILE *file = fopen(filePath, "r");
+    if (file == NULL) {
+        perror("Failed to open file");
+        return false;
+    }
+
+    char line[256]; // Buffer to hold each line from the file
+    while (fgets(line, sizeof(line), file)) {
+        int fileUserID = 0, fileStoreNum = 0;
+
+        // Parse the line to extract UserId and StoreNum
+        if (sscanf(line, "UserId: %d , StoreNum: %d", &fileUserID, &fileStoreNum) == 2) {
+            // Compare with the provided UserID and StoreNum
+            if (fileUserID == userID && fileStoreNum == storeNum) {
+                fclose(file); // Close the file before returning
+                return true;  // Match found
+            }
+        }
+    }
+
+    fclose(file); // Close the file after reading all lines
+    return false; // No match found
+}
 
 void updateProductRating(const char* productName, double newRating, pthread_t callingThreadID, int storeIndex, int productIndex) {
     g_rating_sem = sem_open(SEM_RATING_UPDATE, O_CREAT, 0644, 1);
@@ -800,7 +828,6 @@ int main() {
             UserShoppingList *currentUser = &shoppingList[currentUserIndex];
             *currentUser = read_user_shopping_list(); 
             currentUser->shmFd = shmFd;
-
             processUser(currentUser);
             exit(0); 
         } else {
