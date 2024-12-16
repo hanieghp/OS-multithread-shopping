@@ -31,6 +31,8 @@
 #define SEM_RESULT_UPDATE "/result_update_sem"
 #define SEM_RATING_UPDATE "/rating_update_sem"
 #define SEM_SHOPPING_LIST "/shopping_list_sem"
+#define FILE_ADDRESS "users.txt"
+
 
 #define SHM_KEY 0x1234
 
@@ -196,41 +198,6 @@ Product* readProductFromFile(const char* filepath) {
    return product;
 }
 
-// Function to read user's shopping list
-/*UserShoppingList* read_user_shopping_list() {
-   UserShoppingList* shoppingList = malloc(sizeof(UserShoppingList));
-   memset(shoppingList, 0, sizeof(UserShoppingList));
-  
-   printf("Enter User ID: ");
-   scanf("%99s", shoppingList->userID);
-  
-   printf("Enter number of products: ");
-   scanf("%d", &shoppingList->productCount);
-    printf("the number : %d\n", shoppingList->productCount);
-   printf("Order list: \n");
-   for (int i = 0; i < shoppingList->productCount; i++) {
-       printf("Product %d Name: ", i + 1);
-       scanf("%99s", shoppingList->products[1][i].name);
-       //scanf("%99s", shoppingList->products[2][i].name);
-       //scanf("%99s", shoppingList->products[3][i].name);
-       printf("Product %d Quantity: ", i + 1);
-       scanf("%d", &shoppingList->entity[i]);
-       //scanf("%d", &shoppingList->products[2][i].entity);
-       //scanf("%d", &shoppingList->products[3][i].entity);
-   }
-   printf("Enter Budget Cap (-1 for no cap): ");
-   scanf("%lf", &shoppingList->budgetCap);
-
-   for(int i = 0; i < storeCount; i++){
-    shoppingList->storeMembership[i] = NoMember;
-    shoppingList->purchaseCount[i] = 0;
-    shoppingList->hasDiscount[i] = false;
-   }
-   shoppingList->userPID = getpid();
-   return shoppingList;
-}
-*/
-
 // Function to list all products in a category
 void listCategoryProducts(const char* categoryPath) {
    DIR* dir;
@@ -356,6 +323,44 @@ double calculateProductValue(Product* product){
     return product->score * product->price;
 }
 
+void write_user_store_to_file(const char *fileAddress, int userID, int storeNum) { // Open the file in append mode to add data without overwriting existing content 
+    FILE *file = fopen(fileAddress, "a"); 
+    if (file == NULL) { 
+        perror("Failed to open file for writing"); 
+        return; 
+    } // Write the UserId and StoreNum to the file 
+    fprintf(file, "UserId: %d , StoreNum: %d\n", userID, storeNum); 
+    // Close the file after writing 
+    fclose(file); 
+    printf("Successfully wrote UserId: %d , StoreNum: %d to %s\n", userID, storeNum, fileAddress);
+}  
+
+bool check_user_store_in_file(const char *filePath, char* userID, int storeNum) {
+    FILE *file = fopen(filePath, "r");
+    if (file == NULL) {
+        perror("Failed to open file");
+        return false;
+    }
+
+    char line[256]; // Buffer to hold each line from the file
+    while (fgets(line, sizeof(line), file)) {
+        int fileUserID = 0, fileStoreNum = 0;
+
+        // Parse the line to extract UserId and StoreNum
+        if (sscanf(line, "UserId: %s , StoreNum: %d", &fileUserID, &fileStoreNum) == 2) {
+            // Compare with the provided UserID and StoreNum
+            if (strcmp(fileUserID, userID) ==0 && fileStoreNum == storeNum) {
+                fclose(file); // Close the file before returning
+                return true;  // Match found
+            }
+        }
+    }
+
+    fclose(file); // Close the file after reading all lines
+    return false; // No match found
+}
+
+
 void* calculateStoreBaskettValue(void* args){
    sem_wait(g_shopping_list_sem);
    UserShoppingList* shoppingList = (UserShoppingList*)args;
@@ -403,45 +408,22 @@ void* calculateStoreBaskettValue(void* args){
                }
                shoppingList->store_match_count[bestStore] = 1;
                shoppingList->totalCost = totalCost;
-               if(check_user_store_in_file(file_path, shoppingList->userID, bestStore)){
-                    printf("wow , good for you ! youll get discount from us!");
-                    shoppingList->totalCost = shoppingList->totalCost*0.9;
-               }
            }
        }
        //printf("store %d basket value: %.2f\n", i+1, totalBasketValue);
        printf("in calculating: TID: %ld and PID: %d\n", pthread_self(), getpid());
        printf("best store is: %d\n",bestStore);
+        if(check_user_store_in_file(FILE_ADDRESS, shoppingList->userID, bestStore)){
+            printf("wow , good for you ! youll get discount from us!");
+            shoppingList->totalCost = shoppingList->totalCost*0.9;
+        }
+        printf("userId : %s\n", shoppingList->userID);
+        write_user_store_to_file(FILE_ADDRESS, shoppingList->userID, bestStore);
 
 
        sem_post(g_shopping_list_sem);
    }
    return NULL;
-}
-
-bool check_user_store_in_file(const char *filePath, int userID, int storeNum) {
-    FILE *file = fopen(filePath, "r");
-    if (file == NULL) {
-        perror("Failed to open file");
-        return false;
-    }
-
-    char line[256]; // Buffer to hold each line from the file
-    while (fgets(line, sizeof(line), file)) {
-        int fileUserID = 0, fileStoreNum = 0;
-
-        // Parse the line to extract UserId and StoreNum
-        if (sscanf(line, "UserId: %d , StoreNum: %d", &fileUserID, &fileStoreNum) == 2) {
-            // Compare with the provided UserID and StoreNum
-            if (fileUserID == userID && fileStoreNum == storeNum) {
-                fclose(file); // Close the file before returning
-                return true;  // Match found
-            }
-        }
-    }
-
-    fclose(file); // Close the file after reading all lines
-    return false; // No match found
 }
 
 void updateProductRating(const char* productName, double newRating, pthread_t callingThreadID, int storeIndex, int productIndex) {
