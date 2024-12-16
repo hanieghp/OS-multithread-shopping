@@ -325,7 +325,7 @@ double calculateProductValue(Product* product){
 
 void* calculateStoreBaskettValue(void* args){
     usleep(1000000);
-   //sem_wait(g_shopping_list_sem);
+   sem_wait(g_shopping_list_sem);
    UserShoppingList* shoppingList = (UserShoppingList*)args;
    for(int i = 0; i < MAX_storeCount; i++){
        shoppingList->store_match_count[i] = 0;
@@ -374,17 +374,18 @@ void* calculateStoreBaskettValue(void* args){
            }
        }
 
-        shoppingList->stopThread = true;
-        printf("stopThread : %d", shoppingList->stopThread);
     
        //printf("store %d basket value: %.2f\n", i+1, totalBasketValue);
        printf("in calculating: TID: %ld and PID: %d\n", pthread_self(), getpid());
        printf("best store is: %d\n",bestStore);
    }
+       shoppingList->stopThread = true;
+        printf("stopThread : %d", shoppingList->stopThread);
+    
     //pthread_mutex_lock(&liveLock);
     //pthread_mutex_unlock(&liveLock);
 
-    //sem_post(g_shopping_list_sem);
+    sem_post(g_shopping_list_sem);
     int r = pthread_cond_broadcast(&liveCond);
     printf("r : %d", r);
    return NULL;
