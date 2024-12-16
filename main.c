@@ -72,6 +72,8 @@ typedef struct {
    char *filepath;
    char **names;
    Product *product;
+   UserShoppingList* shoppingList;
+   int storeNum;
 } threadInput;
 
 typedef struct { 
@@ -527,14 +529,15 @@ void* rateProducts(void* args) {
 void* searchProductInCategory(void* args){
     //printf("in thread with tid : %ld\n", pthread_self());
     threadInput *input = (threadInput *)args;
+    UserShoppingList* shoppingList = input->shoppingList;
     char** proNames = input->names;
     sem_wait(g_search_sem);
     Product* product = readProductFromFile(input->filepath);
     sem_post(g_search_sem);
+    printf("shop : %d\n", shoppingList->productCount);
     //printf("proCount from thread : %d\n", input->proCount);
     //printf("name : %s, %s, %s\n", product->name, input->filepath, proNames[0]);
     for(int i = 0; i < input->proCount; i++){
-        //printf("name : %s\n", product->name);
         if (product && strcasecmp(product->name, proNames[i]) == 0){
             sem_wait(g_result_sem);
             printf("i found it in %s!!!!\n", input->filepath);
@@ -547,6 +550,7 @@ void* searchProductInCategory(void* args){
             input->product->foundFlag = 1;
             input->proNum = i;
             sem_post(g_result_sem);
+            memcpy(&(shoppingList->products[input->storeNum][i]), input->product, sizeof(Product));
         }
     }
     free(product);
@@ -584,7 +588,8 @@ void processCategories(int storeNum, const char* storePath, UserShoppingList* sh
                 inputs[j]->proCount = shoppingList->productCount;
                 inputs[j]->names = productNames;
                 inputs[j]->product = malloc(sizeof(Product));
-
+                inputs[j]->shoppingList = shoppingList;
+                inputs[j]->storeNum = storeNum;
                 if (pthread_create(&threads[j], NULL, searchProductInCategory, (void*)inputs[j]) != 0) {
                     perror("pthread_create failed");
                     exit(EXIT_FAILURE);
@@ -594,9 +599,9 @@ void processCategories(int storeNum, const char* storePath, UserShoppingList* sh
 
             for (int l = 0; l < j; l++) {
                 pthread_join(threads[l], NULL);
-                if (inputs[l]->product->foundFlag == 1) {
+                /*if (inputs[l]->product->foundFlag == 1) {
                     memcpy(&(shoppingList->products[storeNum][inputs[l]->proNum]), inputs[l]->product, sizeof(Product));
-                }
+                }*/
                 free(inputs[l]->product);
                 free(inputs[l]);
             }
