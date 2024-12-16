@@ -35,6 +35,7 @@
 #define SEM_RESULT_UPDATE "/result_update_sem"
 #define SEM_RATING_UPDATE "/rating_update_sem"
 #define SEM_SHOPPING_LIST "/shopping_list_sem"
+#define FILE_ADDRESS "users.txt"
 
 
 #define SHM_KEY 0x1234
@@ -356,105 +357,108 @@ double calculateProductValue(Product* product){
    return product->score * product->price;
 }
 
+void write_user_store_to_file(const char *fileAddress, char* userID, int storeNum) { // Open the file in append mode to add data without overwriting existing content 
+    FILE *file = fopen(fileAddress, "a"); 
+    if (file == NULL) { 
+        perror("Failed to open file for writing"); 
+        return; 
+    } // Write the UserId and StoreNum to the file 
+    fprintf(file, "UserId: %s , StoreNum: %d\n", userID, storeNum); 
+    // Close the file after writing 
+    fclose(file); 
+    printf("Successfully wrote UserId: %s , StoreNum: %d to %s\n", userID, storeNum, fileAddress);
+}  
 
-void* calculateStoreBaskettValue(void* args){
-  sem_wait(g_shopping_list_sem);
-  UserShoppingList* shoppingList = (UserShoppingList*)args;
-  for(int i = 0; i < MAX_storeCount; i++){
-      shoppingList->store_match_count[i] = 0;
-  }
-  double bestTotalValue = 0.0;
-  int bestStore = -1;
-  for(int i = 0; i < MAX_storeCount; i++){
-      double totalBasketValue = 0.0;
-      int totalCost = 0;
-      int allProductFound = 1;
+bool check_user_store_in_file(const char *filePath, char* userID, int storeNum) {
+    FILE *file = fopen(filePath, "r");
+    if (file == NULL) {
+        perror("Failed to open file");
+        return false;
+    }
 
+    char line[256]; // Buffer to hold each line from the file
+    while (fgets(line, sizeof(line), file)) {
+        char fileUserID[1000];
+        int fileStoreNum = 0;
 
+        // Parse the line to extract UserId and StoreNum
+        if (sscanf(line, "UserId: %s , StoreNum: %d", fileUserID, &fileStoreNum) == 2) {
+            // Compare with the provided UserID and StoreNum
+            if (strcmp(fileUserID, userID) ==0 && fileStoreNum == storeNum) {
+                fclose(file); // Close the file before returning
+                return true;  // Match found
+            }
+        }
+    }
 
-
-      for(int j = 0; j < shoppingList->productCount; j++){
-          Product* curProduct = &(shoppingList->products[i][j]);
-
-
-
-
-          if(curProduct->foundFlag){
-              double productValue = calculateProductValue(curProduct);
-
-
-
-
-              if(curProduct->entity >= shoppingList->entity[j]){
-              totalBasketValue += productValue;
-              totalCost += curProduct->price * shoppingList->entity[j];
-              }
-              else{
-                  allProductFound = 0;
-                  printf("store %d just have %d, you want %d, you can't buy from\n", i+1, curProduct->entity, shoppingList->entity[j]);
-                  break;
-              }
-          }
-          else{
-              allProductFound = 0;
-              printf("store %d doesn't have %s, you can't buy from\n", i+1, curProduct->name);
-              break;
-          }
-      }
-      if(allProductFound){
-          //printf("allfound\n");
-          if(shoppingList->budgetCap == -1 || totalCost <= shoppingList->budgetCap){
-              if(totalBasketValue > bestTotalValue){
-                  bestTotalValue = totalBasketValue;
-                  bestStore = i;
-              }
-              shoppingList->store_match_count[bestStore] = 1;
-              shoppingList->totalCost = totalCost;
-              /*if(check_user_store_in_file(file_path, shoppingList->userID, bestStore)){
-                   printf("wow , good for you ! youll get discount from us!");
-                   shoppingList->totalCost = shoppingList->totalCost*0.9;
-              }*/
-          }
-      }
-      //printf("store %d basket value: %.2f\n", i+1, totalBasketValue);
-      printf("in calculating: TID: %ld and PID: %d\n", pthread_self(), getpid());
-      printf("best store is: %d\n",bestStore);
-
-
-
-
-      sem_post(g_shopping_list_sem);
-  }
-  return NULL;
+    fclose(file); // Close the file after reading all lines
+    return false; // No match found
 }
 
 
-bool check_user_store_in_file(const char *filePath, int userID, int storeNum) {
-   FILE *file = fopen(filePath, "r");
-   if (file == NULL) {
-       perror("Failed to open file");
-       return false;
+void* calculateStoreBaskettValue(void* args){
+   sem_wait(g_shopping_list_sem);
+   UserShoppingList* shoppingList = (UserShoppingList*)args;
+   for(int i = 0; i < MAX_storeCount; i++){
+       shoppingList->store_match_count[i] = 0;
    }
+   double bestTotalValue = 0.0;
+   int bestStore = -1;
+   for(int i = 0; i < MAX_storeCount; i++){
+       double totalBasketValue = 0.0;
+       int totalCost = 0;
+       int allProductFound = 1;
 
 
-   char line[256]; // Buffer to hold each line from the file
-   while (fgets(line, sizeof(line), file)) {
-       int fileUserID = 0, fileStoreNum = 0;
+       for(int j = 0; j < shoppingList->productCount; j++){
+           Product* curProduct = &(shoppingList->products[i][j]);
 
 
-       // Parse the line to extract UserId and StoreNum
-       if (sscanf(line, "UserId: %d , StoreNum: %d", &fileUserID, &fileStoreNum) == 2) {
-           // Compare with the provided UserID and StoreNum
-           if (fileUserID == userID && fileStoreNum == storeNum) {
-               fclose(file); // Close the file before returning
-               return true;  // Match found
+           if(curProduct->foundFlag){
+               double productValue = calculateProductValue(curProduct);
+
+
+               if(curProduct->entity >= shoppingList->entity[j]){
+               totalBasketValue += productValue;
+               totalCost += curProduct->price * shoppingList->entity[j];
+               }
+               else{
+                   allProductFound = 0;
+                   printf("store %d just have %d, you want %d, you can't buy from\n", i+1, curProduct->entity, shoppingList->entity[j]);
+                   break;
+               }
+           }
+           else{
+               allProductFound = 0;
+               printf("store %d doesn't have %s, you can't buy from\n", i+1, curProduct->name);
+               break;
            }
        }
+       if(allProductFound){
+           //printf("allfound\n");
+           if(shoppingList->budgetCap == -1 || totalCost <= shoppingList->budgetCap){
+               if(totalBasketValue > bestTotalValue){
+                   bestTotalValue = totalBasketValue;
+                   bestStore = i;
+               }
+               shoppingList->store_match_count[bestStore] = 1;
+               shoppingList->totalCost = totalCost;
+           }
+       }
+       //printf("store %d basket value: %.2f\n", i+1, totalBasketValue);
+       printf("in calculating: TID: %ld and PID: %d\n", pthread_self(), getpid());
+       printf("best store is: %d\n",bestStore);
+
+       sem_post(g_shopping_list_sem);
    }
+        if(check_user_store_in_file(FILE_ADDRESS, shoppingList->userID, bestStore)){
+        printf("wow , good for you ! youll get discount from us!");
+        shoppingList->totalCost = shoppingList->totalCost*0.9;
+        }
+        //printf("userId : %s\n", shoppingList->userID);
+        write_user_store_to_file(FILE_ADDRESS, shoppingList->userID, bestStore);
 
-
-   fclose(file); // Close the file after reading all lines
-   return false; // No match found
+   return NULL;
 }
 
 
