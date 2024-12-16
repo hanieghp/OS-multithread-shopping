@@ -374,8 +374,8 @@ void* calculateStoreBaskettValue(void* args){
            }
        }
 
-        stopThread = true;
-        printf("stopThread : %d", stopThread);
+        shoppingList->stopThread = true;
+        printf("stopThread : %d", shoppingList->stopThread);
     
        //printf("store %d basket value: %.2f\n", i+1, totalBasketValue);
        printf("in calculating: TID: %ld and PID: %d\n", pthread_self(), getpid());
@@ -529,7 +529,7 @@ void* searchProductInCategory(void* args){
             //pthread_mutex_lock(&liveLock);
             printf("after\n");
              //printf("stop : %d ", stopThread);
-            while(!stopThread){
+            while(!shoppingList->stopThread){
             }
             //pthread_cond_wait(&liveCond, &liveLock);
             
