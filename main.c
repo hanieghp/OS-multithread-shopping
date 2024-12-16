@@ -64,7 +64,6 @@ typedef struct {
   bool hasDiscount[MAX_storeCount];
   int entity[MAX_PRODUCTS];
   int shmFd;
-  int stopThread;
 } UserShoppingList;
 
 typedef struct {
@@ -92,8 +91,7 @@ sem_t *g_shopping_list_sem = NULL;
 UserShoppingList* shoppingList;
 int *userCount = 0;
 pthread_mutex_t liveLock = PTHREAD_MUTEX_INITIALIZER;
-pthread_cond_t liveCond = PTHREAD_COND_INITIALIZER;
-
+bool stopThread = false;
 
 //define all functions
 void processCategories(int storeNum, const char* storePath, UserShoppingList* shoppingList);
@@ -197,6 +195,41 @@ Product* readProductFromFile(const char* filepath) {
    product->foundFlag = 0;
    return product;
 }
+
+// Function to read user's shopping list
+/*UserShoppingList* read_user_shopping_list() {
+   UserShoppingList* shoppingList = malloc(sizeof(UserShoppingList));
+   memset(shoppingList, 0, sizeof(UserShoppingList));
+  
+   printf("Enter User ID: ");
+   scanf("%99s", shoppingList->userID);
+  
+   printf("Enter number of products: ");
+   scanf("%d", &shoppingList->productCount);
+    printf("the number : %d\n", shoppingList->productCount);
+   printf("Order list: \n");
+   for (int i = 0; i < shoppingList->productCount; i++) {
+       printf("Product %d Name: ", i + 1);
+       scanf("%99s", shoppingList->products[1][i].name);
+       //scanf("%99s", shoppingList->products[2][i].name);
+       //scanf("%99s", shoppingList->products[3][i].name);
+       printf("Product %d Quantity: ", i + 1);
+       scanf("%d", &shoppingList->entity[i]);
+       //scanf("%d", &shoppingList->products[2][i].entity);
+       //scanf("%d", &shoppingList->products[3][i].entity);
+   }
+   printf("Enter Budget Cap (-1 for no cap): ");
+   scanf("%lf", &shoppingList->budgetCap);
+
+   for(int i = 0; i < storeCount; i++){
+    shoppingList->storeMembership[i] = NoMember;
+    shoppingList->purchaseCount[i] = 0;
+    shoppingList->hasDiscount[i] = false;
+   }
+   shoppingList->userPID = getpid();
+   return shoppingList;
+}
+*/
 
 // Function to list all products in a category
 void listCategoryProducts(const char* categoryPath) {
@@ -324,7 +357,6 @@ double calculateProductValue(Product* product){
 }
 
 void* calculateStoreBaskettValue(void* args){
-    usleep(1000000);
    sem_wait(g_shopping_list_sem);
    UserShoppingList* shoppingList = (UserShoppingList*)args;
    for(int i = 0; i < MAX_storeCount; i++){
@@ -373,21 +405,13 @@ void* calculateStoreBaskettValue(void* args){
                shoppingList->totalCost = totalCost;
            }
        }
-
-    
        //printf("store %d basket value: %.2f\n", i+1, totalBasketValue);
        printf("in calculating: TID: %ld and PID: %d\n", pthread_self(), getpid());
        printf("best store is: %d\n",bestStore);
-   }
-       shoppingList->stopThread = true;
-        printf("stopThread : %d", shoppingList->stopThread);
-    
-    //pthread_mutex_lock(&liveLock);
-    //pthread_mutex_unlock(&liveLock);
 
-    sem_post(g_shopping_list_sem);
-    int r = pthread_cond_broadcast(&liveCond);
-    printf("r : %d", r);
+
+       sem_post(g_shopping_list_sem);
+   }
    return NULL;
 }
 
@@ -463,7 +487,6 @@ void updateProductRating(const char* productName, double newRating, pthread_t ca
 }
 
 void* rateProducts(void* args) {
-    sleep(3);
    UserShoppingList* shoppingList = (UserShoppingList*)args;
 
    printf("\nPlease rate the products you've purchased:\n");
@@ -503,97 +526,6 @@ void* rateProducts(void* args) {
    return NULL;
 }
 
-int getNextOrderID(const char* storePath, const char* categoryPath, const char* userID) {
-    char logDir[MAX_PATH_LEN];
-    snprintf(logDir, sizeof(logDir), "%s/logs", categoryPath);
-    
-    // Ensure log directory exists
-    mkdir(logDir, 0777);
-    
-    // Create a lock file to ensure thread-safe incrementation
-    char lockFilePath[MAX_PATH_LEN];
-    snprintf(lockFilePath, sizeof(lockFilePath), "%s/orderid_lock", logDir);
-    
-    int lockFd = open(lockFilePath, O_CREAT | O_RDWR, 0666);
-    if (lockFd == -1) {
-        perror("Failed to create lock file");
-        return 1;  // Default to 1 if lock fails
-    }
-    
-    // Acquire an exclusive lock
-    if (flock(lockFd, LOCK_EX) == -1) {
-        perror("Failed to acquire lock");
-        close(lockFd);
-        return 1;
-    }
-    
-    int maxOrderID = 0;
-    DIR *dir;
-    struct dirent *entry;
-    
-    // Open the directory
-    dir = opendir(logDir);
-    if (dir != NULL) {
-        while ((entry = readdir(dir)) != NULL) {
-            // Check if the filename starts with the userID
-            if (strncmp(entry->d_name, userID, strlen(userID)) == 0) {
-                char *underscore = strrchr(entry->d_name, '_');
-                if (underscore) {
-                    int currentOrderID = atoi(underscore + 1);
-                    if (currentOrderID > maxOrderID) {
-                        maxOrderID = currentOrderID;
-                    }
-                }
-            }
-        }
-        closedir(dir);
-    }
-    
-    // Release the lock
-    if (flock(lockFd, LOCK_UN) == -1) {
-        perror("Failed to release lock");
-    }
-    close(lockFd);
-    
-    // Return the next order ID (increment by 1)
-    return maxOrderID + 1;
-}
-
-void createCategoryLogFile(const char* storePath, const char* categoryPath, const char* userID, int* orderID){
-    *orderID = getNextOrderID(storePath, categoryPath, userID);
-   char logDir[MAX_PATH_LEN];
-   snprintf(logDir, sizeof(logDir), "%s/logs", categoryPath);
-   mkdir(logDir, 0777);
-
-   char logFileName[MAX_PATH_LEN];
-   snprintf(logFileName, sizeof(logFileName), "%s/%s_%d.log",logDir,userID,*orderID);
-
-   FILE* logFile = fopen(logFileName, "w");
-   if(!logFile){
-       perror("fail to create logfile");
-       return;
-   }
-   fclose(logFile);
-}
-
-void writeToLogFile(const char* categoryPath, const char* userID, int orderID, const char* message){
-   char logDir[MAX_PATH_LEN];
-   snprintf(logDir, sizeof(logDir), "%s/logs",categoryPath);
-
-
-   char logFileName[MAX_PATH_LEN];
-   snprintf(logFileName, sizeof(logFileName), "%s/%s_%d.log", logDir, userID, orderID);
-
-
-   FILE* logFile = fopen(logFileName, "a");
-   if(!logFile){
-       perror("can't open log file");
-       return;
-   }
-   fprintf(logFile, "%s\n", message);
-   fclose(logFile);
-}
-
 void* searchProductInCategory(void* args){
     //printf("in thread with tid : %ld\n", pthread_self());
     threadInput *input = (threadInput *)args;
@@ -602,6 +534,8 @@ void* searchProductInCategory(void* args){
     sem_wait(g_search_sem);
     Product* product = readProductFromFile(input->filepath);
     sem_post(g_search_sem);
+    //printf("proCount from thread : %d\n", input->proCount);
+    //printf("name : %s, %s, %s\n", product->name, input->filepath, proNames[0]);
     for(int i = 0; i < input->proCount; i++){
         if (product && strcasecmp(product->name, proNames[i]) == 0){
             sem_wait(g_result_sem);
@@ -613,25 +547,12 @@ void* searchProductInCategory(void* args){
             input->product->score = product->score;
             input->product->entity = product->entity;
             input->product->foundFlag = 1;
-            product->foundFlag = 1;
             input->proNum = i;
             sem_post(g_result_sem);
-            memcpy(&(shoppingList->products[input->storeNum][i]), product, sizeof(Product));
-            
-            //pthread_mutex_lock(&liveLock);
-            printf("after\n");
-             //printf("stop : %d ", stopThread);
-            while(!shoppingList->stopThread){
-            }
-            //pthread_cond_wait(&liveCond, &liveLock);
-            
-            printf("before\n");
-            //pthread_mutex_unlock(&liveLock);
-            printf("im done now\n");
+            memcpy(&(shoppingList->products[input->storeNum][i]), input->product, sizeof(Product));
         }
     }
     free(product);
-    pthread_exit(NULL);
     return NULL;
 }
 
@@ -645,7 +566,6 @@ void processCategories(int storeNum, const char* storePath, UserShoppingList* sh
         strcpy(productNames[k], shoppingList->products[1][k].name);
     }
     int shmFd = shoppingList->shmFd;
-    int orderID = 0;
     for (int i = 0; i < categoryCount; i++) {
         pid_t pidCategory = fork();
         if (pidCategory == 0) { // Child process
@@ -657,12 +577,6 @@ void processCategories(int storeNum, const char* storePath, UserShoppingList* sh
                 exit(EXIT_FAILURE);
             }
             categories[i][strcspn(categories[i], "\n")] = 0;
-            createCategoryLogFile(storePath, categories[i], shoppingList->userID, &orderID);
-            char procLogMsg[MAX_PATH_LEN];
-            snprintf(procLogMsg, sizeof(procLogMsg), "PID %d create child for %s pid:%d with order %d",
-            getppid(), categories[i], getpid(),orderID);
-            writeToLogFile(categories[i], shoppingList->userID, orderID, procLogMsg);
-
             char** productFiles = getsubfiles(categories[i]);
 
             int j = 0;
@@ -679,29 +593,19 @@ void processCategories(int storeNum, const char* storePath, UserShoppingList* sh
                     perror("pthread_create failed");
                     exit(EXIT_FAILURE);
                 }
-                char threadLogMsg[MAX_PATH_LEN];
-                snprintf(threadLogMsg, sizeof(threadLogMsg), "Pid %d create thread for order TID: %ld", getpid(), threads[j]);
-                writeToLogFile(categories[i], shoppingList->userID, orderID, threadLogMsg);
                 j++;
             }
-            for(long int i = 0; i < 9999999; i++){
 
-            }
             for (int l = 0; l < j; l++) {
                 pthread_join(threads[l], NULL);
                 /*if (inputs[l]->product->foundFlag == 1) {
                     memcpy(&(shoppingList->products[storeNum][inputs[l]->proNum]), inputs[l]->product, sizeof(Product));
                 }*/
-    
-                //free(inputs[l]->product);
-                //free(inputs[l]);
+                free(inputs[l]->product);
+                free(inputs[l]);
             }
-            sleep(1);
-            munmap(shoppingList, sizeof(UserShoppingList) * 10 + sizeof(int));
-            for(long int i = 0; i < 9999999; i++ ){
 
-            }
-            printf("category exting\n");
+            munmap(shoppingList, sizeof(UserShoppingList) * 10 + sizeof(int));
             exit(0);
         } else if (pidCategory < 0) {
             perror("Failed to fork for category\n");
@@ -718,9 +622,8 @@ void processCategories(int storeNum, const char* storePath, UserShoppingList* sh
         free(productNames[k]);
     }
     free(productNames);
-    
-    //sleep(2);
 }
+
 
 void processStores(UserShoppingList* shoppingList) {
     char** stores = getSubStoreDirectories("Dataset");
@@ -728,6 +631,7 @@ void processStores(UserShoppingList* shoppingList) {
     //printf("budget from child : %f\n", shoppingList->budgetCap);
     for (int i = 0; i < storeCount; i++) {
         pid_t pidStore = fork();
+
         if (pidStore == 0) {  // Child process
             // Map shared memory in the child process
             UserShoppingList *mappedList = mmap(NULL, sizeof(UserShoppingList), PROT_READ | PROT_WRITE, MAP_SHARED, shmFd, 0);
@@ -745,11 +649,7 @@ void processStores(UserShoppingList* shoppingList) {
 
             // Cleanup in child process
             munmap(mappedList, sizeof(UserShoppingList)); // Unmap shared memory
-            for(long int i = 0; i < 9999999; i++ ){
-
-            }       
-            printf("store exiting\n");
-            exit(0); 
+            exit(0); // Exit the child process
         }
         else if (pidStore < 0) {  // Fork failed
             perror("Failed to fork for store");
@@ -758,22 +658,19 @@ void processStores(UserShoppingList* shoppingList) {
             printf("Parent: forked child for store %d\n", i + 1);
         }
     }
-    /*for(long long int i = 0; i < 999999999; i++){
 
-    }*/
     // Wait for all child processes to complete
     int status;
     while (wait(&status) > 0); // Wait for any child process to finish
+
     // Free allocated memory for store names
-    //sleep(2);
     for (int i = 0; i < storeCount; i++) {
         free(stores[i]);
     }
     free(stores);
-    for(long int i = 0; i < 9999999; i++ ){
-
-    }
 }	
+
+
 void processUser(UserShoppingList* shoppingList){
     /*sem_unlink(SEM_PRODUCT_SEARCH);
    sem_unlink(SEM_RESULT_UPDATE);
@@ -790,23 +687,17 @@ void processUser(UserShoppingList* shoppingList){
        perror("Semaphore creation failed");
        return;
    }
+
+   processStores(shoppingList);
+
    pthread_t basketValueThread;
    pthread_t ratingThread;
    pthread_t finalListThread;
 
    pthread_create(&basketValueThread ,NULL, calculateStoreBaskettValue, (void*)shoppingList);
+   pthread_join(basketValueThread, NULL);
 
-   pthread_create(&ratingThread, NULL, rateProducts, (void*)shoppingList);
-   pthread_detach(basketValueThread);
-
-   processStores(shoppingList);
-
-    pthread_join(ratingThread, NULL);
-
-   // printf("im starting");
-    
-
-    /*if(shoppingList->store_match_count[0] || shoppingList->store_match_count[1] ||
+   if(shoppingList->store_match_count[0] || shoppingList->store_match_count[1] ||
         shoppingList->store_match_count[2]){ // age mitonest bekhare asan
 
         pthread_create(&ratingThread, NULL, rateProducts, (void*)shoppingList);
@@ -814,7 +705,7 @@ void processUser(UserShoppingList* shoppingList){
 
         //pthread_create(&finalListThread, NULL, updateFinalShoppingList, shoppingList);
         //pthread_join(finalListThread, NULL);
-    }*/
+    }
 
     printf("\nProcessed Shopping List for User %s:\n", shoppingList->userID);
     for (int i = 0; i < shoppingList->productCount; i++) {
@@ -862,7 +753,7 @@ UserShoppingList read_user_shopping_list() {
         printf("Product %d Name: ", i + 1);
         scanf("%99s", shoppingList.products[1][i].name);
         printf("Product %d Quantity: ", i + 1);
-        scanf("%d", &shoppingList.entity[i]);
+        scanf("%d", &shoppingList.products[1][i].entity);
     }
     printf("Enter Budget Cap (-1 for no cap): ");
     scanf("%lf", &shoppingList.budgetCap);
@@ -923,9 +814,9 @@ int main() {
 
     printf("Exiting...\n");
 
+    // Clean up shared memory
     munmap(sharedMem, shmSize);
     shm_unlink(shmName);
 
     return 0;
 }
-
