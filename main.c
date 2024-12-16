@@ -323,16 +323,16 @@ double calculateProductValue(Product* product){
     return product->score * product->price;
 }
 
-void write_user_store_to_file(const char *fileAddress, int userID, int storeNum) { // Open the file in append mode to add data without overwriting existing content 
+void write_user_store_to_file(const char *fileAddress, char* userID, int storeNum) { // Open the file in append mode to add data without overwriting existing content 
     FILE *file = fopen(fileAddress, "a"); 
     if (file == NULL) { 
         perror("Failed to open file for writing"); 
         return; 
     } // Write the UserId and StoreNum to the file 
-    fprintf(file, "UserId: %d , StoreNum: %d\n", userID, storeNum); 
+    fprintf(file, "UserId: %s , StoreNum: %d\n", userID, storeNum); 
     // Close the file after writing 
     fclose(file); 
-    printf("Successfully wrote UserId: %d , StoreNum: %d to %s\n", userID, storeNum, fileAddress);
+    printf("Successfully wrote UserId: %s , StoreNum: %d to %s\n", userID, storeNum, fileAddress);
 }  
 
 bool check_user_store_in_file(const char *filePath, char* userID, int storeNum) {
@@ -344,10 +344,11 @@ bool check_user_store_in_file(const char *filePath, char* userID, int storeNum) 
 
     char line[256]; // Buffer to hold each line from the file
     while (fgets(line, sizeof(line), file)) {
-        int fileUserID = 0, fileStoreNum = 0;
+        char* fileUserID;
+        int fileStoreNum = 0;
 
         // Parse the line to extract UserId and StoreNum
-        if (sscanf(line, "UserId: %s , StoreNum: %d", &fileUserID, &fileStoreNum) == 2) {
+        if (sscanf(line, "UserId: %s , StoreNum: %d", fileUserID, &fileStoreNum) == 2) {
             // Compare with the provided UserID and StoreNum
             if (strcmp(fileUserID, userID) ==0 && fileStoreNum == storeNum) {
                 fclose(file); // Close the file before returning
