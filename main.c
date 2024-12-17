@@ -60,6 +60,7 @@ typedef struct {
  int entity[MAX_PRODUCTS];
  int shmFd;
  bool stopThread;
+ bool stopBasket;
  pthread_mutex_t *mutex;
  pthread_cond_t *cond;
 } UserShoppingList;
@@ -427,9 +428,10 @@ bool check_user_store_in_file(const char *filePath, char* userID, int storeNum) 
 
 void* calculateStoreBaskettValue(void* args){
     printf("im in\n");
-    sleep(2);
-   sem_wait(g_shopping_list_sem);
    UserShoppingList* shoppingList = (UserShoppingList*)args;
+    while(shoppingList->stopBasket);
+    sleep(1);
+   sem_wait(g_shopping_list_sem);
    for(int i = 0; i < MAX_storeCount; i++){
        shoppingList->store_match_count[i] = 0;
    }
@@ -485,6 +487,7 @@ void* calculateStoreBaskettValue(void* args){
     pthread_mutex_lock(shoppingList->mutex);
     shoppingList->stopThread = false;
     pthread_mutex_unlock(shoppingList->mutex);
+    printf("i released it\n");
     pthread_cond_broadcast(shoppingList->cond);
     if(check_user_store_in_file(FILE_ADDRESS, shoppingList->userID, bestStore)){
     printf("wow , good for you ! youll get discount from us!");
@@ -700,6 +703,7 @@ void writeToLogFile(const char* categoryPath, const char* userID, int orderID, c
 }
 
 void* searchProductInCategory(void* args){
+    shoppingList->stopBasket = true;
    //printf("in thread with tid : %ld\n", pthread_self());
    threadInput *input = (threadInput *)args;
    UserShoppingList* shoppingList = input->shoppingList;
@@ -727,6 +731,7 @@ void* searchProductInCategory(void* args){
             input->proNum = i;
             sem_post(g_result_sem);
             memcpy(&(shoppingList->products[input->storeNum][i]), input->product, sizeof(Product));
+            shoppingList->stopBasket = false;
             printf("im waiting\n");
             pthread_mutex_lock(shoppingList->mutex);
             while(stopThread){
@@ -797,7 +802,7 @@ void processCategories(int storeNum, const char* storePath, UserShoppingList* sh
 
             while(shoppingList->stopThread);
            for (int l = 0; l < j; l++) {
-               pthread_join(threads[l], NULL);
+               pthread_detach(threads[l], NULL);
                free(inputs[l]->product);
                free(inputs[l]);
            }
@@ -814,10 +819,10 @@ void processCategories(int storeNum, const char* storePath, UserShoppingList* sh
 
 
    // Wait for all child processes
-  /* for (int k = 0; k < categoryCount; k++) {
+   for (int k = 0; k < categoryCount; k++) {
        wait(NULL);
    }
-*/
+
 
    // Free memory
    for (int k = 0; k < shoppingList->productCount; k++) {
@@ -906,13 +911,15 @@ void processUser(UserShoppingList* shoppingList){
   pthread_t ratingThread;
   pthread_t finalListThread;
 
-
+    shoppingList->stopBasket = true;
   // pthread_detach(basketValueThread);
     pthread_create(&basketValueThread ,NULL, calculateStoreBaskettValue, (void*)shoppingList);
     //pthread_create(&ratingThread, NULL, rateProducts, (void*)shoppingList);
+    //pthread_detach(basketValueThread, NULL);
 
-    pthread_detach(basketValueThread);
     processStores(shoppingList);
+    //pthread_join(basketValueThread, NULL);
+    pthread_detach(basketValueThread, NULL);
 
   //pthread_create(&ratingThread, NULL, rateProducts, (void*)shoppingList);
 
@@ -1038,15 +1045,15 @@ int main() {
 
 
            UserShoppingList *currentUser = &shoppingList[currentUserIndex];
-            shoppingList->stopThread = true;    
-            pthread_mutex_init(&shoppingList->mutex, NULL);
-            pthread_cond_init(&shoppingList->cond, NULL);
+            currentUser->stopThread = true;    
+            pthread_mutex_init(&currentUser->mutex, NULL);
+            pthread_cond_init(&currentUser->cond, NULL);
 
            *currentUser = read_user_shopping_list();
            currentUser->shmFd = shmFd;
            processUser(currentUser);
-           pthread_attr_destroy(&shoppingList->mutex);
-           pthread_attr_destroy(&shoppingList->cond);
+           pthread_attr_destroy(currentUser->mutex);
+           pthread_attr_destroy(currentUser->cond);
            exit(0);
        } else {
            wait(NULL);
