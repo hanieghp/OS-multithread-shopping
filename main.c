@@ -434,8 +434,9 @@ bool check_user_store_in_file(const char *filePath, char* userID, int storeNum) 
 
 void* calculateStoreBaskettValue(void* args){
     sem_wait(&start_threads_sem);
-    printf("im in\n");
-    sleep(2);
+    printf("in calculating: TID: %ld and PID: %d\n", pthread_self(), getpid());
+    //printf("im in\n");
+    //sleep(2);
    sem_wait(g_shopping_list_sem);
    UserShoppingList* shoppingList = (UserShoppingList*)args;
    for(int i = 0; i < MAX_storeCount; i++){
@@ -485,11 +486,10 @@ void* calculateStoreBaskettValue(void* args){
            }
        }
        //printf("store %d basket value: %.2f\n", i+1, totalBasketValue);
-       printf("in calculating: TID: %ld and PID: %d\n", pthread_self(), getpid());
-       printf("best store is: %d\n",bestStore);
 
        sem_post(g_shopping_list_sem);
    }
+   printf("best store is: %d\n",bestStore);
     pthread_mutex_lock(shoppingList->mutex);
     shoppingList->stopThread = false;
     pthread_mutex_unlock(shoppingList->mutex);
@@ -777,7 +777,7 @@ void processCategories(int storeNum, const char* storePath, UserShoppingList* sh
    char** categories = getSubDirectories(storePath);
    char** productNames = malloc(shoppingList->productCount * sizeof(char*));
    for (int k = 0; k < shoppingList->productCount; k++) {
-       printf("proName : %s\n", shoppingList->products[1][k].name);
+       //printf("proName : %s\n", shoppingList->products[1][k].name);
        productNames[k] = malloc(strlen(shoppingList->products[1][k].name) + 1);
        strcpy(productNames[k], shoppingList->products[1][k].name);
    }
@@ -828,7 +828,7 @@ void processCategories(int storeNum, const char* storePath, UserShoppingList* sh
                j++;
            }
 
-           for (int l = 0; l < j; l++) {
+           /*for (int l = 0; l < j; l++) {
                pthread_mutex_lock(&inputs[l]->stateMutex);
                while(inputs[l]->threadState != THREAD_FOUND && 
                      inputs[l]->threadState != THREAD_COMPLETED) {
@@ -858,9 +858,9 @@ void processCategories(int storeNum, const char* storePath, UserShoppingList* sh
                pthread_cond_destroy(&inputs[l]->stateCond);
                free(inputs[l]->product);
                free(inputs[l]);
-           }
+           }*/
 
-            /*while(shoppingList->stopThread);
+            while(shoppingList->stopThread);
            for (int l = 0; l < j; l++) {
                pthread_join(threads[l], NULL);
                free(inputs[l]->product);
@@ -868,8 +868,8 @@ void processCategories(int storeNum, const char* storePath, UserShoppingList* sh
            }
             for(long int o = 0; o < 999999; o++){
 
-            }*/
-            printf("category exiting! : %d\n", shoppingList->stopThread);
+            }
+            //printf("category exiting! : %d\n", shoppingList->stopThread);
            munmap(shoppingList, sizeof(UserShoppingList) * 10 + sizeof(int));
            exit(0);
        } else if (pidCategory < 0) {
@@ -909,7 +909,7 @@ void processStores(UserShoppingList* shoppingList) {
 
 
            // Debug print to verify shared memory access
-           printf("Child process for store %d: budgetCap = %f\n", i + 1, mappedList->budgetCap);
+           printf("Child process for store %d:\n", i + 1, mappedList->budgetCap);
 
 
            // Process the store categories
@@ -919,7 +919,7 @@ void processStores(UserShoppingList* shoppingList) {
             for(long int o = 0; o < 999999; o++){}
            // Cleanup in child process
            munmap(mappedList, sizeof(UserShoppingList)); // Unmap shared memory
-           printf("store exiting!\n");
+           //printf("store exiting!\n");
            exit(0); // Exit the child process
        }
        else if (pidStore < 0) {  // Fork failed
@@ -951,7 +951,7 @@ void processUser(UserShoppingList* shoppingList){
   sem_unlink(SEM_RESULT_UPDATE);
   sem_unlink(SEM_INVENTORY_UPDATE);
   sem_unlink(SEM_SHOPPING_LIST);*/
-   printf("in user process with pid: %d\n", getpid());
+   printf("\n%s create PID: %d\n",shoppingList->userID ,getpid());
    //initThreadPool();
   //semaphore
   g_search_sem = sem_open(SEM_PRODUCT_SEARCH, O_CREAT, 0644, 1);
@@ -971,13 +971,13 @@ void processUser(UserShoppingList* shoppingList){
     perror("failed to create first thread");
     return;
   } 
-  printf("create basketValue thread with TID: %ld\n", basketValueThread);
+  printf("PID %d create thread for Orders TID: %ld\n",getpid(), basketValueThread);
 
   if(pthread_create(&ratingThread, NULL, rateProducts, (void*)shoppingList) != 0){
     perror("failed to create second thread");
     return;
   }
-  printf("create rating thread with TID: %ld\n", ratingThread);
+  printf("PID %d create thread for Scores TID: %ld\n",getpid(), ratingThread);
 
   processStores(shoppingList);
 
