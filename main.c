@@ -437,6 +437,7 @@ void* calculateStoreBaskettValue(void* args){
        if(allProductFound){
            //printf("allfound\n");
            if(shoppingList->budgetCap == -1 || totalCost <= shoppingList->budgetCap){
+            printf("i'm in");
                if(totalBasketValue > bestTotalValue){
                    bestTotalValue = totalBasketValue;
                    bestStore = i;
@@ -447,7 +448,7 @@ void* calculateStoreBaskettValue(void* args){
        }
        //printf("store %d basket value: %.2f\n", i+1, totalBasketValue);
        printf("in calculating: TID: %ld and PID: %d\n", pthread_self(), getpid());
-       printf("best store is: %d\n",bestStore);
+       printf("best store is: %d\n",bestStore+1);
 
        sem_post(g_shopping_list_sem);
    }
@@ -729,9 +730,6 @@ void updateThreadPoolProduct(const char* productName, int storeIndex, Product* p
    }
 }
 
-
-
-
 // Cleanup thread pool
 void cleanupThreadPool() {
    pthread_mutex_lock(&g_threadPoolMutex);
@@ -964,21 +962,19 @@ void processUser(UserShoppingList* shoppingList){
   pthread_t finalListThread;
 
 
+    processStores(shoppingList);
+
   pthread_create(&basketValueThread ,NULL, calculateStoreBaskettValue, (void*)shoppingList);
-  pthread_create(&ratingThread, NULL, rateProducts, (void*)shoppingList);
-   pthread_detach(basketValueThread);
+  //pthread_create(&ratingThread, NULL, rateProducts, (void*)shoppingList);
+   //pthread_detach(basketValueThread);
   
-   processStores(shoppingList);
-  
-   pthread_join(ratingThread, NULL);
-  
-   cleanupThreadPool();
+   //pthread_join(ratingThread, NULL);
 
 
-  //pthread_join(basketValueThread, NULL);
+  pthread_join(basketValueThread, NULL);
 
 
-  /*if(shoppingList->store_match_count[0] || shoppingList->store_match_count[1] ||
+  if(shoppingList->store_match_count[0] || shoppingList->store_match_count[1] ||
        shoppingList->store_match_count[2]){ // age mitonest bekhare asan
 
 
@@ -988,7 +984,9 @@ void processUser(UserShoppingList* shoppingList){
 
        //pthread_create(&finalListThread, NULL, updateFinalShoppingList, shoppingList);
        //pthread_join(finalListThread, NULL);
-   }*/
+
+       cleanupThreadPool();
+   }
 
 
    printf("\nProcessed Shopping List for User %s:\n", shoppingList->userID);
@@ -1011,9 +1009,6 @@ void processUser(UserShoppingList* shoppingList){
            }
        }
    }
-
-
-
 
   // Clean up semaphores
   sem_close(g_search_sem);
