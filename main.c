@@ -711,10 +711,10 @@ void writeToLogFile(const char* categoryPath, const char* userID, int orderID, c
 }
 
 void* searchProductInCategory(void* args){
-   //printf("in thread with tid : %ld\n", pthread_self());
    threadInput *input = (threadInput *)args;
    UserShoppingList* shoppingList = input->shoppingList;
    char** proNames = input->names;
+   int orderID = 0;
 
     pthread_mutex_lock(&input->stateMutex);
     input->threadState = THREAD_SEARCHING;
@@ -724,9 +724,33 @@ void* searchProductInCategory(void* args){
    Product* product = readProductFromFile(input->filepath);
    sem_post(g_search_sem);
 
+   char storePath[MAX_PATH_LEN];
+   const char *datasetPath = strstr(input->filepath, "Dataset/");
+   if(datasetPath){
+    const char *firstSlash = strchr(datasetPath + strlen("Dataset/"),'/');
+    if(firstSlash){
+        strncpy(storePath, input->filepath, firstSlash - input->filepath);
+        storePath[firstSlash - input->filepath] = '\0';
+    }
+   }
+   //printf("storepath %s", storePath);
+   char filename[MAX_PATH_LEN];
+   const char *lastSlash = strrchr(input->filepath, '/');
+    if(lastSlash){
+    size_t pathLenght = lastSlash - input->filepath;
+    strncpy(filename ,input->filepath, pathLenght);
+    filename[pathLenght] = '\0';
+    }
+    //orderID = getNextOrderID(storePath, filename, shoppingList->userID);
+    //printf("\ninput filepath: %s\n", filename);
    for(int i = 0; i < input->proCount; i++){
        if (product && strcasecmp(product->name, proNames[i]) == 0){
            sem_wait(g_result_sem);
+           
+           char threadLogMsg[MAX_PATH_LEN];
+           snprintf(threadLogMsg, sizeof(threadLogMsg), "TID: %ld searching file: %s | Product: %s | Status: FOUND",
+           pthread_self(), input->filepath, proNames[i]);
+           writeToLogFile(filename, shoppingList->userID, orderID, threadLogMsg);
 
            printf("i found it in %s!!!!\n", input->filepath);
            printf("TID found: %ld\n",pthread_self());
@@ -760,6 +784,12 @@ void* searchProductInCategory(void* args){
             pthread_mutex_unlock(shoppingList->mutex);*/
             printf("im done\n");
        }
+       else{
+        char failedSreachMsg[MAX_PATH_LEN];
+        snprintf(failedSreachMsg, sizeof(failedSreachMsg), "TID: %ld searching file: %s | Product: %s | Status: NOT FOUND",
+        pthread_self(),input->filepath, proNames[i]);
+        writeToLogFile(filename, shoppingList->userID, orderID, failedSreachMsg);
+       }
    }
    free(product);
 
@@ -785,10 +815,8 @@ void processCategories(int storeNum, const char* storePath, UserShoppingList* sh
    int orderID = 0;
    for (int i = 0; i < categoryCount; i++) {
        pid_t pidCategory = fork();
-       if (pidCategory == 0) { // Child process
+       if (pidCategory == 0) {
            pthread_t threads[10000];
-           // Remap shared memory
-           //printf("im in categories\n");
            UserShoppingList *shoppingList = mmap(NULL, sizeof(UserShoppingList) * 10 + sizeof(int), PROT_READ | PROT_WRITE, MAP_SHARED, shmFd, 0);
            if (shoppingList == MAP_FAILED) {
                perror("mmap failed in child");
@@ -801,10 +829,10 @@ void processCategories(int storeNum, const char* storePath, UserShoppingList* sh
            }
            printf("PID %d create chile for %s PID:%d\n",getppid(), category, getpid());
            createCategoryLogFile(storePath, categories[i], shoppingList->userID, &orderID);
-           char procLogMsg[MAX_PATH_LEN];
+           /*char procLogMsg[MAX_PATH_LEN];
            snprintf(procLogMsg, sizeof(procLogMsg), "PID %d create child for %s pid: %d with order %d",
            getppid(), categories[i], getpid(), orderID);
-           writeToLogFile(categories[i], shoppingList->userID, orderID, procLogMsg);
+           writeToLogFile(categories[i], shoppingList->userID, orderID, procLogMsg);*/
 
 
            char** productFiles = getsubfiles(categories[i]);
@@ -829,7 +857,8 @@ void processCategories(int storeNum, const char* storePath, UserShoppingList* sh
                }
                char threadLogMsg[MAX_PATH_LEN];
                snprintf(threadLogMsg, sizeof(threadLogMsg), "Pid %d create thread for order TID: %ld", getpid(), threads[j]);
-               writeToLogFile(categories[i], shoppingList->userID, orderID, threadLogMsg);
+               //writeToLogFile(categories[i], shoppingList->userID, orderID, threadLogMsg);
+               //printf("bafore path: %s\n",categories[i]);
                j++;
            }
 
