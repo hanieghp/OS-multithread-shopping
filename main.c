@@ -16,9 +16,7 @@
 #include <stdbool.h>
 #include <fcntl.h>
 #include <sys/mman.h>
-
-
-
+#include <raylib.h>
 
 #define FILESNUMBER 79
 #define MAX_PRODUCTS 80
@@ -30,16 +28,29 @@
 #define maxUser 10
 #define MAX_THREAD 100
 
-
 #define SEM_PRODUCT_SEARCH "/product_search_sem"
 #define SEM_RESULT_UPDATE "/result_update_sem"
 #define SEM_RATING_UPDATE "/rating_update_sem"
 #define SEM_SHOPPING_LIST "/shopping_list_sem"
 #define FILE_ADDRESS "users.txt"
 
+//graphic
+const int screenWidth = 800;
+const int screenHeight = 450;
+#define INPUT_FIELD_HEIGHT 40
+#define INPUT_FIELD_WIDTH 300
+#define INPUT_FIELD_X ((screenWidth - INPUT_FIELD_WIDTH) / 2)
+
+typedef enum {
+    STATE_USER_ID,
+    STATE_PRODUCT_COUNT,
+    STATE_PRODUCT_DETAILS,
+    STATE_BUDGET,
+    STATE_COMPLETE
+} UIState;
+
 
 #define SHM_KEY 0x1234
-
 
 typedef struct {
   char name[MAX_NAME_LEN];
@@ -119,6 +130,143 @@ void processCategories(int storeNum, const char* storePath, UserShoppingList* sh
 void processStroes(UserShoppingList* shoppingList);
 void processUser(UserShoppingList* shoppingList);
 
+void DrawInputField(int x, int y, int width, int height, const char* label, const char* input){
+    DrawRectangle(x, y, width, height, LIGHTGRAY);
+    DrawRectangleLines(x, y, width, height, DARKGRAY);
+
+
+    DrawText(label, x, y - 20, 20, BLACK);
+    DrawText(input, x + 5, y + 10, 20, BLACK);
+}
+
+
+void HandleTextInput(char* inputBuffer, int* cursorPosition, int maxLength) {
+    int key = GetCharPressed();
+    
+    // Backspace
+    if (IsKeyPressed(KEY_BACKSPACE)) {
+        if (*cursorPosition > 0) {
+            (*cursorPosition)--;
+            inputBuffer[*cursorPosition] = '\0';
+        }
+    }
+    
+    // Text input
+    if (key >= 32 && key <= 125 && *cursorPosition < maxLength - 1) {
+        inputBuffer[*cursorPosition] = (char)key;
+        (*cursorPosition)++;
+        inputBuffer[*cursorPosition] = '\0';
+    }
+}
+
+UserShoppingList* GraphicalUserInput() {
+    UserShoppingList* shoppingList = malloc(sizeof(UserShoppingList));
+    memset(shoppingList, 0, sizeof(UserShoppingList));
+    
+    UIState currentState = STATE_USER_ID;
+    char inputBuffer[100] = {0};
+    int cursorPosition = 0;
+    int currentProductIndex = 0;
+    
+    InitWindow(screenWidth, screenHeight, "kh");
+    SetTargetFPS(60);
+
+    while (!WindowShouldClose()) {
+        BeginDrawing();
+        ClearBackground(RAYWHITE);
+        switch (currentState) {
+            case STATE_USER_ID:
+                DrawText("Enter User ID:", 50, 100, 20, BLACK);
+                DrawRectangleLines(50, 150, 300, 40, BLACK);
+                DrawText(inputBuffer, 60, 160, 20, BLACK);
+                
+                HandleTextInput(inputBuffer, &cursorPosition, MAX_NAME_LEN);
+                
+                if (IsKeyPressed(KEY_ENTER) && strlen(inputBuffer) > 0) {
+                    strcpy(shoppingList->userID, inputBuffer);
+                    memset(inputBuffer, 0, sizeof(inputBuffer));
+                    cursorPosition = 0;
+                    currentState = STATE_PRODUCT_COUNT;
+                }
+                break;
+            case STATE_PRODUCT_COUNT:
+                DrawText("Enter Number of Products:", 50, 100, 20, BLACK);
+                DrawRectangleLines(50, 150, 300, 40, BLACK);
+                DrawText(inputBuffer, 60, 160, 20, BLACK);
+                
+  HandleTextInput(inputBuffer, &cursorPosition, 3);
+                
+                if (IsKeyPressed(KEY_ENTER) && strlen(inputBuffer) > 0) {
+                    shoppingList->productCount = atoi(inputBuffer);
+                    memset(inputBuffer, 0, sizeof(inputBuffer));
+                    cursorPosition = 0;
+                    currentState = STATE_PRODUCT_DETAILS;
+                }
+                break;
+            case STATE_PRODUCT_DETAILS:
+                DrawText(TextFormat("Enter Product %d Name:", currentProductIndex + 1), 50, 100, 20, BLACK);
+                DrawRectangleLines(50, 150, 300, 40, BLACK);
+                DrawText(inputBuffer, 60, 160, 20, BLACK);
+                
+                HandleTextInput(inputBuffer, &cursorPosition, MAX_NAME_LEN);
+
+
+                if (IsKeyPressed(KEY_ENTER) && strlen(inputBuffer) > 0) {
+                    strcpy(shoppingList->products[1][currentProductIndex].name, inputBuffer);
+                    memset(inputBuffer, 0, sizeof(inputBuffer));
+                    cursorPosition = 0;
+                    //printf("innnnnnnn");
+                    
+                    while(1){
+                        BeginDrawing();
+                        ClearBackground(RAYWHITE);
+
+
+                        DrawText(TextFormat("Enter Product %d Quantity:", currentProductIndex + 1), 50, 200, 20, BLACK);
+                        DrawRectangleLines(50, 250, 300, 40, BLACK);
+                        DrawText(inputBuffer, 60, 260, 20, BLACK);
+                        EndDrawing();
+
+
+                        HandleTextInput(inputBuffer, &cursorPosition, 3);
+if(IsKeyPressed(KEY_ENTER) && strlen(inputBuffer) > 0){
+                            shoppingList->entity[currentProductIndex] = atoi(inputBuffer);
+                            memset(inputBuffer, 0, sizeof(inputBuffer));
+                            cursorPosition = 0;
+
+
+                            currentProductIndex++;
+                            if (currentProductIndex >= shoppingList->productCount) {
+                            currentState = STATE_BUDGET;
+                            }
+                            break;
+                        }
+                    }
+                }
+                break;
+            case STATE_BUDGET:
+                DrawText("Enter Budget Cap (-1 for no cap):", 50, 100, 20, BLACK);
+                DrawRectangleLines(50, 150, 300, 40, BLACK);
+                DrawText(inputBuffer, 60, 160, 20, BLACK);
+                
+                HandleTextInput(inputBuffer, &cursorPosition, 20);
+                
+                if (IsKeyPressed(KEY_ENTER) && strlen(inputBuffer) > 0) {
+                    shoppingList->budgetCap = atof(inputBuffer);
+                    shoppingList->userPID = getpid();
+                    currentState = STATE_COMPLETE;
+                }
+                break;
+            case STATE_COMPLETE:
+                CloseWindow();
+                return shoppingList;
+        }
+        EndDrawing();
+}
+    CloseWindow();
+    free(shoppingList);
+    return NULL;
+}
 
 char** getSubStoreDirectories(const char *dir){
  int count = 0;
@@ -1075,7 +1223,6 @@ int main() {
    shoppingList = (UserShoppingList *)sharedMem;
    userCount = (int *)((char *)sharedMem + sizeof(UserShoppingList) *10);
 
-
    while (1) {
        pid_t pid = fork();
        if (pid < 0) {
@@ -1085,7 +1232,24 @@ int main() {
            int currentUserIndex = *userCount;
            (userCount) -= (int*)(sizeof(UserShoppingList));
 
+            //graphic
+            /*UserShoppingList* shoppingList = GraphicalUserInput();
+    
+            if (shoppingList) {
+            // Print out the collected information for verification
+            printf("User ID: %s\n", shoppingList->userID);
+            printf("Product Count: %d\n", shoppingList->productCount);
+            
+            for (int i = 0; i < shoppingList->productCount; i++) {
+                printf("Product %d: %s (Quantity: %d)\n", 
+                    i+1, 
+                    shoppingList->products[1][i].name, 
+                    shoppingList->entity[i]);
+            }
+            
+            printf("Budget Cap: %.2f\n", shoppingList->budgetCap);*/
 
+            ////////////////////////////////
            UserShoppingList *currentUser = &shoppingList[currentUserIndex];
            *currentUser = read_user_shopping_list();
            currentUser->shmFd = shmFd;
