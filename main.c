@@ -431,7 +431,7 @@ void* calculateStoreBaskettValue(void* args){
 }
 
 
-void updateProductRating(const char* productName, double newRating, pthread_t callingThreadID, int storeIndex, int productIndex) {
+void updateProductRating(int newEntity, const char* productName, double newRating, pthread_t callingThreadID, int storeIndex, int productIndex) {
     g_rating_sem = sem_open(SEM_RATING_UPDATE, O_CREAT, 0644, 1);
     if (g_rating_sem == SEM_FAILED) {
         perror("Semaphore creation failed for rating update");
@@ -486,7 +486,7 @@ void updateProductRating(const char* productName, double newRating, pthread_t ca
         fprintf(file, "Name: %s\n", product->name);
         fprintf(file, "Price: %.2f\n", product->price);
         fprintf(file, "Score: %.2f\n", product->score);
-        fprintf(file, "Entity: %d\n", product->entity);
+        fprintf(file, "Entity: %d\n", newEntity);
         fprintf(file, "Last Modified: %s\n", formattedTime);
         fclose(file);
         printf("Product rating updated successfully\n");
@@ -534,7 +534,8 @@ void* rateProducts(void* args) {
            printf("Invalid rating. Please enter a rating between 1 and 5: ");
               scanf("%lf", &rating);
           }
-          updateProductRating(shoppingList->products[selectedStore][i].name,rating,pthread_self() ,selectedStore,i);
+          int newEntity = shoppingList->products[selectedStore][i].entity - shoppingList->entity[i];
+          updateProductRating(newEntity ,shoppingList->products[selectedStore][i].name,rating,pthread_self() ,selectedStore,i);
       }
   }
   return NULL;
@@ -814,7 +815,7 @@ void processUser(UserShoppingList* shoppingList){
   sem_unlink(SEM_INVENTORY_UPDATE);
   sem_unlink(SEM_SHOPPING_LIST);*/
    printf("in user process with pid: %d\n", getpid());
-   initThreadPool();
+   //initThreadPool();
   //semaphore
   g_search_sem = sem_open(SEM_PRODUCT_SEARCH, O_CREAT, 0644, 1);
   g_result_sem = sem_open(SEM_RESULT_UPDATE, O_CREAT, 0644, 1);
