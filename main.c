@@ -795,6 +795,11 @@ void processCategories(int storeNum, const char* storePath, UserShoppingList* sh
                exit(EXIT_FAILURE);
            }
            categories[i][strcspn(categories[i], "\n")] = 0;
+           char *category = strrchr(categories[i], '/');
+           if(category != NULL){
+            category++;
+           }
+           printf("PID %d create chile for %s PID:%d\n",getppid(), category, getpid());
            createCategoryLogFile(storePath, categories[i], shoppingList->userID, &orderID);
            char procLogMsg[MAX_PATH_LEN];
            snprintf(procLogMsg, sizeof(procLogMsg), "PID %d create child for %s pid: %d with order %d",
@@ -894,25 +899,16 @@ void processCategories(int storeNum, const char* storePath, UserShoppingList* sh
 void processStores(UserShoppingList* shoppingList) {
    char** stores = getSubStoreDirectories("Dataset");
    int shmFd = shoppingList->shmFd; // File descriptor for shared memory
-   //printf("budget from child : %f\n", shoppingList->budgetCap);
    for (int i = 0; i < storeCount; i++) {
        pid_t pidStore = fork();
-
-
-       if (pidStore == 0) {  // Child process
-           // Map shared memory in the child process
+       if (pidStore == 0) {  
            UserShoppingList *mappedList = mmap(NULL, sizeof(UserShoppingList), PROT_READ | PROT_WRITE, MAP_SHARED, shmFd, 0);
            if (mappedList == MAP_FAILED) {
                perror("mmap failed in child");
                exit(EXIT_FAILURE);
            }
+           printf("PID %d create child for Store%d PID:%d\n",getppid(), i + 1, getpid());
 
-
-           // Debug print to verify shared memory access
-           printf("Child process for store %d:\n", i + 1, mappedList->budgetCap);
-
-
-           // Process the store categories
            stores[i][strcspn(stores[i], "\n")] = 0; // Remove trailing newline
            processCategories(i, stores[i], mappedList);
             while(shoppingList->stopThread);
@@ -925,9 +921,9 @@ void processStores(UserShoppingList* shoppingList) {
        else if (pidStore < 0) {  // Fork failed
            perror("Failed to fork for store");
            break;
-       } else {  // Parent process
+       } /*else {  // Parent process
            printf("Parent: forked child for store %d\n", i + 1);
-       }
+       }*/
    }
 
 
