@@ -16,7 +16,7 @@
 #include <stdbool.h>
 #include <fcntl.h>
 #include <sys/mman.h>
-#include <raylib.h>
+//#include <raylib.h>
 
 #define FILESNUMBER 79
 #define MAX_PRODUCTS 80
@@ -130,7 +130,7 @@ void processCategories(int storeNum, const char* storePath, UserShoppingList* sh
 void processStroes(UserShoppingList* shoppingList);
 void processUser(UserShoppingList* shoppingList);
 
-void DrawInputField(int x, int y, int width, int height, const char* label, const char* input){
+/*void DrawInputField(int x, int y, int width, int height, const char* label, const char* input){
     DrawRectangle(x, y, width, height, LIGHTGRAY);
     DrawRectangleLines(x, y, width, height, DARKGRAY);
 
@@ -267,7 +267,7 @@ if(IsKeyPressed(KEY_ENTER) && strlen(inputBuffer) > 0){
     free(shoppingList);
     return NULL;
 }
-
+*/
 char** getSubStoreDirectories(const char *dir){
  int count = 0;
  char **categories = malloc(sizeof(char *) * 1000);    
@@ -611,7 +611,7 @@ void* calculateStoreBaskettValue(void* args){
 }
 
 
-void updateProductRating(const char* productName, double newRating, int storeIndex, int productIndex) {
+void updateProductRating(int newEntity, const char* productName, double newRating, int storeIndex, int productIndex) {
    int threadPoolIndex = findThreadByProductAndStore(productName, storeIndex);
    if (threadPoolIndex == -1) {
        printf("Thread for product %s not found\n", productName);
@@ -660,7 +660,7 @@ void updateProductRating(const char* productName, double newRating, int storeInd
            fprintf(file, "Name: %s\n", product->name);
            fprintf(file, "Price: %.2f\n", product->price);
            fprintf(file, "Score: %.2f\n", product->score);
-           fprintf(file, "Entity: %d\n", product->entity);
+           fprintf(file, "Entity: %d\n", newEntity);
            fprintf(file, "Last Modified: %s\n", formattedTime);
            fclose(file);
           
@@ -716,7 +716,7 @@ void* rateProducts(void* args) {
           threadInfoCount++;*/
 
 
-          updateProductRating(shoppingList->products[selectedStore][i].name, rating,selectedStore,i);
+          updateProductRating(shoppingList->products[selectedStore][i].entity-shoppingList->entity[i], shoppingList->products[selectedStore][i].name, rating,selectedStore,i);
       }
   }
   return NULL;
