@@ -159,10 +159,10 @@ project/
 3. Submit a pull request
 4. Follow coding standards
 
-##abstraction :
+##summary :
 we have a syste, that at first give input from user contains : budgetCap , items, user id and for handling that at forst 
 we want to search for that items :
-1. forking for stors
+1. forking for stores
 2. forking for categories
 3. threading for items
 at the end :
