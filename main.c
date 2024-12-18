@@ -17,6 +17,7 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/file.h>
+#include <raylib.h>
 
 #define FILESNUMBER 79
 #define MAX_PRODUCTS 80
@@ -1054,6 +1055,111 @@ UserShoppingList read_user_shopping_list() {
    return shoppingList;
 }
 
+UserShoppingList GraphicalUserInput() {
+   // Variables for Raylib UI
+   UserShoppingList shoppingList = {0};
+   int currentInput = 0;
+   char inputBuffer[256] = {0};
+   int cursorPosition = 0;
+
+
+   // Initialize Raylib
+   InitWindow(800, 600, "kh");
+   SetTargetFPS(60);
+
+   // UI loop
+   while (!WindowShouldClose()) {
+       BeginDrawing();
+       ClearBackground(RAYWHITE);
+
+       DrawText("Shopping List Form", 20, 20, 20, DARKGRAY);
+
+       if (currentInput == 0) {
+           DrawText("Enter User ID:", 20, 60, 20, BLACK);
+           DrawText(inputBuffer, 200, 60, 20, DARKBLUE);
+       } else if (currentInput == 1) {
+           DrawText("Enter Number of Products:", 20, 100, 20, BLACK);
+           DrawText(inputBuffer, 300, 100, 20, DARKBLUE);
+       } else if (currentInput >= 2 && currentInput < 2 + shoppingList.productCount * 2) {
+           int productIndex = (currentInput - 2) / 2;
+if ((currentInput - 2) % 2 == 0) {
+               DrawText(TextFormat("Enter Product %d Name:", productIndex + 1), 20, 140, 20, BLACK);
+           } else {
+               DrawText(TextFormat("Enter Product %d Quantity:", productIndex + 1), 20, 140, 20, BLACK);
+           }
+           DrawText(inputBuffer, 300, 140, 20, DARKBLUE);
+       } else if (currentInput == 2 + shoppingList.productCount * 2) {
+           DrawText("Enter Budget Cap:", 20, 180, 20, BLACK);
+           DrawText(inputBuffer, 300, 180, 20, DARKBLUE);
+       } else {
+           DrawText("Form Completed! Press ENTER to Confirm.", 20, 220, 20, DARKGREEN);
+       }
+
+
+
+
+       // Draw cursor
+       if ((GetTime() * 2) - (int)(GetTime() * 2) < 0.5) {
+           DrawRectangle(200 + MeasureText(inputBuffer, 20), 60 + currentInput * 40, 10, 20, DARKBLUE);
+       }
+
+
+
+
+       EndDrawing();
+
+
+
+
+       // Handle input
+       int key = GetCharPressed();
+       while (key > 0) {
+           if (key == '\b' && cursorPosition > 0) {
+               inputBuffer[--cursorPosition] = '\0';
+           } else if (key >= 32 && key <= 126 && cursorPosition < sizeof(inputBuffer) - 1) {
+               inputBuffer[cursorPosition++] = (char)key;
+inputBuffer[cursorPosition] = '\0';
+           }
+           key = GetCharPressed();
+       }
+
+
+       // Handle form submission
+       if (IsKeyPressed(KEY_ENTER)) {
+           if (currentInput == 0) {
+               strncpy(shoppingList.userID, inputBuffer, MAX_NAME_LEN);
+               shoppingList.userID[MAX_NAME_LEN - 1] = '\0';
+           } else if (currentInput == 1) {
+               shoppingList.productCount = atoi(inputBuffer);
+               if (shoppingList.productCount > MAX_PRODUCTS) shoppingList.productCount = MAX_PRODUCTS;
+           } else if (currentInput >= 2 && currentInput < 2 + shoppingList.productCount * 2) {
+               int productIndex = (currentInput - 2) / 2;
+               if ((currentInput - 2) % 2 == 0) {
+                   strncpy(shoppingList.products[productIndex]->name, inputBuffer, MAX_NAME_LEN);
+                   shoppingList.products[productIndex]->name[MAX_NAME_LEN - 1] = '\0';
+               } else {
+                   shoppingList.products[productIndex]->entity = atoi(inputBuffer);
+               }
+           } else if (currentInput == 2 + shoppingList.productCount * 2) {
+               shoppingList.budgetCap = atof(inputBuffer);
+           }
+           memset(inputBuffer, 0, sizeof(inputBuffer));
+           cursorPosition = 0;
+           currentInput++;
+       }
+
+
+
+
+       if (currentInput > 2 + shoppingList.productCount * 2) {
+           break;
+       }
+   }
+CloseWindow();
+   return shoppingList;
+}
+
+
 
 int main() {
    const char *shmName = "sharedShoppingList";
@@ -1087,45 +1193,75 @@ int main() {
 
 
    while (1) {
-       pid_t pid = fork();
-       if (pid < 0) {
-           perror("Failed to fork for User\n");
-           break;
-       } else if (pid == 0) {
-           int currentUserIndex = *userCount;
-           (userCount) -= (int*)(sizeof(UserShoppingList));
+      pid_t pid = fork();
+      if (pid < 0) {
+          perror("Failed to fork for User\n");
+          break;
+      } else if (pid == 0) {
+          int currentUserIndex = *userCount;
+          (userCount) -= (int*)(sizeof(UserShoppingList));
+          UserShoppingList *currentUser = &shoppingList[currentUserIndex];
+          shoppingList->stopThread = true;
+           shoppingList->stopFork = true;
+           shoppingList->stopFinal = true;
+pthread_mutex_init(&shoppingList->mutex, NULL);
+           pthread_cond_init(&shoppingList->cond, NULL);
 
 
-           UserShoppingList *currentUser = &shoppingList[currentUserIndex];
-            shoppingList->stopThread = true; 
-            shoppingList->stopFork = true; 
-            shoppingList->stopFinal = true;    
-            pthread_mutex_init(&shoppingList->mutex, NULL);
-            pthread_cond_init(&shoppingList->cond, NULL);
-
-           *currentUser = read_user_shopping_list();
-           currentUser->shmFd = shmFd;
-           processUser(currentUser);
-           pthread_mutex_destroy(&shoppingList->mutex);
-           pthread_cond_destroy(&shoppingList->cond);
-           exit(0);
-       } else {
-           wait(NULL);
-           if (*userCount >= 10) {
-               printf("Maximum user count reached.\n");
-               break;
+          //graphic
+          UserShoppingList shoppingList = GraphicalUserInput();
+          //if(shoppingList){
+           // Print out the collected information for verification
+           printf("User ID: %s\n", shoppingList.userID);
+           printf("Product Count: %d\n", shoppingList.productCount);
+          
+           for (int i = 0; i < shoppingList.productCount; i++) {
+               printf("Product %d: %s (Quantity: %d)\n",
+                   i+1,
+                   shoppingList.products[1][i].name,
+                   shoppingList.entity[i]);
+                  
            }
-       }
-   }
+          
+           printf("Budget Cap: %.2f\n", shoppingList.budgetCap);
 
 
-   printf("Exiting...\n");
+           currentUser->shmFd = shmFd;
+          processUser(currentUser);
+          pthread_mutex_destroy(&shoppingList.mutex);
+          pthread_cond_destroy(&shoppingList.cond);
+          exit(0);
+          //}
 
 
-   // Clean up shared memory
-   munmap(sharedMem, shmSize);
-   shm_unlink(shmName);
+          /*UserShoppingList *currentUser = &shoppingList[currentUserIndex];
+           shoppingList->stopThread = true;
+           shoppingList->stopFork = true;
+           shoppingList->stopFinal = true;   
+           pthread_mutex_init(&shoppingList->mutex, NULL);
+           pthread_cond_init(&shoppingList->cond, NULL);
 
 
-   return 0;
+          *currentUser = read_user_shopping_list();
+          currentUser->shmFd = shmFd;
+          processUser(currentUser);
+          pthread_mutex_destroy(&shoppingList->mutex);
+          pthread_cond_destroy(&shoppingList->cond);
+ exit(0);*/
+      } else {
+          wait(NULL);
+          if (*userCount >= 10) {
+              printf("Maximum user count reached.\n");
+              break;
+          }
+      }
+  }
+  printf("Exiting...\n");
+
+
+  munmap(sharedMem, shmSize);
+  shm_unlink(shmName);
+
+
+  return 0;
 }
