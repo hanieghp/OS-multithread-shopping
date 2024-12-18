@@ -1,14 +1,13 @@
 # Shopping System Pipeline Documentation
 
 ## Overview
-This project implements a multi-threaded, multi-process shopping system with user management, product search, inventory tracking, and rating capabilities. The system uses shared memory, semaphores, and thread synchronization to handle concurrent operations.
+This project implements a multi-threaded, multi-process shopping system with user management and rating capabilities. The system uses shared memory, semaphores, and thread synchronization to handle concurrent operations.
 
 ## System Architecture
 
 ### 1. Data Structure
 - **UserShoppingList**: Core data structure containing:
   - User information
-  - Shopping cart details
   - Budget constraints
   - Product ratings
   - Synchronization primitives
@@ -21,8 +20,6 @@ Main Process
         └── Category Processes (1-8)
             └── Product Search Threads
 ```
-
-### 3. Pipeline Flow
 
 #### a. User Input Layer
 - Graphical interface for user data collection
@@ -161,3 +158,14 @@ project/
 2. Create a feature branch
 3. Submit a pull request
 4. Follow coding standards
+
+##abstraction :
+we have a syste, that at first give input from user contains : budgetCap , items, user id and for handling that at forst 
+we want to search for that items :
+1. forking for stors
+2. forking for categories
+3. threading for items
+at the end :
+1. a thread for calculating the best store(basketThread function)
+2. a thread for calculating rates and waking up the threads that have found them and tell them to update that(ratingThread)
+3. a thread for calculating entities and waking up the threads that have found them and tell them to update that(entityThread)
