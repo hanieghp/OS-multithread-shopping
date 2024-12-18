@@ -69,10 +69,12 @@ typedef struct {
   bool stopFork;
   bool stopFinal;
   bool stopRating;
+  bool input;
  pthread_mutex_t mutex;
  pthread_cond_t cond;
  int bestStore;
- int newRating[MAX_PRODUCTS];
+ double newRating[MAX_PRODUCTS];
+ bool finish;
 } UserShoppingList;
 
 typedef struct {
@@ -452,75 +454,15 @@ void* calculateStoreBaskettValue(void* args){
   return NULL;
 }
 
-void updateProductRating(UserShoppingList* shoppingList, double newRating, pthread_t callingThreadID, int storeIndex, int productIndex) {
-    g_rating_sem = sem_open(SEM_RATING_UPDATE, O_CREAT, 0644, 1);
-    if (g_rating_sem == SEM_FAILED) {
-        perror("Semaphore creation failed for rating update");
-        return;
-    }
-    Product* product = &shoppingList->products[storeIndex][productIndex];
-    if (!product) {
-        printf("Failed to get product\n");
-        sem_close(g_rating_sem);
-        //sem_unlink(SEM_RATING_UPDATE);
-        return;
-    }
-    if(sem_wait(g_rating_sem) == -1){
-        perror("wait fail, rating");
-        sem_close(g_rating_sem);
-        return;
-    }
-    char* filePath = findProductFilePath(product->name);
-    if(!filePath){
-        printf("product file path not dound %s\n",product->name);
-        sem_close(g_rating_sem);
-        return;
-    }
-    //sem_wait(g_rating_sem);
-    printf("old score is: %.2f\n", product->score);
-
-
-    double oldScore = product->score;
-    product->score = (oldScore + newRating) / 2.0;
-    time_t now;
-    time(&now);
-
-    char formattedTime[20];
-    strftime(formattedTime, sizeof(formattedTime), "%Y-%m-%d %H:%M:%S", localtime(&now));
-
-
-    FILE* file = fopen(filePath, "w");
-    if (file) {
-        fprintf(file, "Name: %s\n", product->name);
-        fprintf(file, "Price: %.2f\n", product->price);
-        fprintf(file, "Score: %.2f\n", product->score);
-        fprintf(file, "Entity: %d\n", product->entity);
-        fprintf(file, "Last Modified: %s\n", formattedTime);
-        fclose(file);
-        printf("Product rating updated successfully\n");
-        printf("RATE: TID: %ld and PID: %d\n", pthread_self(), getpid());
-        printf("new score is %.2f\n", product->score);
-    } else {
-        perror("Failed to update product file");
-    }
-    if(sem_post(g_rating_sem) == -1){
-        perror("post fail, rating");
-    }
-
-    free(filePath);
-    sem_close(g_rating_sem);
-    //sem_unlink(SEM_RATING_UPDATE);
-}
-
 void* rateProducts(void* args) {
-    sem_wait(&start_threads_sem);
+    //sem_wait(&start_threads_sem);
     UserShoppingList* shoppingList = (UserShoppingList*)args;
 
     printf("\nPlease rate the products you've purchased:\n");
     int selectedStore = shoppingList->bestStore;
     if(selectedStore == -1){
         printf("no store found for RATING\n");
-        sem_post(&start_threads_sem);
+        //sem_post(&start_threads_sem);
         pthread_exit(NULL);
         return NULL;
     }
@@ -636,6 +578,67 @@ void writeToLogFile(const char* categoryPath, const char* userID, int orderID, c
   fclose(logFile);
 }
 
+void updateProductRating(UserShoppingList* shoppingList, double newRating, pthread_t callingThreadID, int storeIndex, int productIndex) {
+    g_rating_sem = sem_open(SEM_RATING_UPDATE, O_CREAT, 0644, 1);
+    if (g_rating_sem == SEM_FAILED) {
+        perror("Semaphore creation failed for rating update");
+        return;
+    }
+    Product* product = &shoppingList->products[storeIndex][productIndex];
+    if (!product) {
+        printf("Failed to get product\n");
+        sem_close(g_rating_sem);
+        //sem_unlink(SEM_RATING_UPDATE);
+        return;
+    }
+    if(sem_wait(g_rating_sem) == -1){
+        perror("wait fail, rating");
+        sem_close(g_rating_sem);
+        return;
+    }
+    char* filePath = findProductFilePath(product->name);
+    if(!filePath){
+        printf("product file path not dound %s\n",product->name);
+        sem_close(g_rating_sem);
+        return;
+    }
+    //sem_wait(g_rating_sem);
+    printf("old score is: %.2f\n", product->score);
+
+
+    double oldScore = product->score;
+    product->score = (oldScore + newRating) / 2.0;
+    time_t now;
+    time(&now);
+
+    char formattedTime[20];
+    strftime(formattedTime, sizeof(formattedTime), "%Y-%m-%d %H:%M:%S", localtime(&now));
+
+
+    FILE* file = fopen(filePath, "w");
+    if (file) {
+        fprintf(file, "Name: %s\n", product->name);
+        fprintf(file, "Price: %.2f\n", product->price);
+        fprintf(file, "Score: %.2f\n", product->score);
+        fprintf(file, "Entity: %d\n", product->entity);
+        fprintf(file, "Last Modified: %s\n", formattedTime);
+        fclose(file);
+        printf("Product rating updated successfully\n");
+        printf("RATE: TID: %ld and PID: %d\n", pthread_self(), getpid());
+        printf("new score is %.2f\n", product->score);
+    } else {
+        perror("Failed to update product file");
+    }
+    if(sem_post(g_rating_sem) == -1){
+        perror("post fail, rating");
+    }
+
+    free(filePath);
+    sem_close(g_rating_sem);
+    //sem_unlink(SEM_RATING_UPDATE);
+}
+
+
 void* searchProductInCategory(void* args){
    threadInput *input = (threadInput *)args;
    UserShoppingList* shoppingList = input->shoppingList;
@@ -705,15 +708,21 @@ void* searchProductInCategory(void* args){
                 printf("im updating entity\n");
                 updateProductEntity(shoppingList);
             }
+            
             while(shoppingList->stopRating){
                 usleep(7);
                 //pthread_cond_wait(&shoppingList->cond, &shoppingList->mutex);
             }
-            for (int i = 0; i < shoppingList->productCount; i++) {
-                if (shoppingList->products[shoppingList->bestStore][i].foundFlag) {
-                    updateProductRating(shoppingList,shoppingList->newRating[i],pthread_self() ,shoppingList->bestStore,i);
-                    printf("im updateing rate\n");
-                }
+
+            if(shoppingList->bestStore == input->storeNum){
+                printf("im updating entity\n");
+                updateProductEntity(shoppingList);
+                for (int i = 0; i < shoppingList->productCount; i++) {
+                    if (shoppingList->products[shoppingList->bestStore][i].foundFlag) {
+                        updateProductRating(shoppingList,shoppingList->newRating[i],pthread_self() ,shoppingList->bestStore,i);
+                        printf("im updateing rate\n");
+                    }
+                }            
             }
             printf("im updated all\n");
             sleep(1);
@@ -859,7 +868,7 @@ void processStores(UserShoppingList* shoppingList) {
 
    // Wait for all child processes to complete
    int status;
-   //while (wait(&status) > 0); // Wait for any child process to finish
+   while (wait(&status) > 0); // Wait for any child process to finish
 
 
    // Free allocated memory for store names
