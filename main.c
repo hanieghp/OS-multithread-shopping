@@ -717,7 +717,6 @@ void* searchProductInCategory(void* args){
             }
             printf("im updated all\n");
             sleep(1);
-            shoppingList->stopFork = false;
        }
        else{
         char failedSreachMsg[MAX_PATH_LEN];
@@ -732,6 +731,7 @@ void* searchProductInCategory(void* args){
    input->threadState = THREAD_COMPLETED;
    pthread_cond_broadcast(&input->stateCond);
    pthread_mutex_unlock(&input->stateMutex);*/
+   shoppingList->stopFork = false;
    pthread_exit(NULL);
    return NULL;
 }
@@ -859,7 +859,7 @@ void processStores(UserShoppingList* shoppingList) {
 
    // Wait for all child processes to complete
    int status;
-   while (wait(&status) > 0); // Wait for any child process to finish
+   //while (wait(&status) > 0); // Wait for any child process to finish
 
 
    // Free allocated memory for store names
