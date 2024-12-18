@@ -82,6 +82,7 @@ typedef struct {
   ThreadState threadState;
   pthread_mutex_t stateMutex;
   pthread_cond_t stateCond;
+  int* orderID;
 } threadInput;
 
 typedef struct {
@@ -226,19 +227,15 @@ char ** getsubfiles(char *dir){
    return files;
 }
 
-
 // Function to read data from dataset file
 Product* readProductFromFile(const char* filepath) {
   FILE* file = fopen(filepath, "r");
   if (!file) {
       return NULL;
   }
-
-
   Product* product = malloc(sizeof(Product));
   memset(product, 0, sizeof(Product));
   char line[200];
-
 
   while (fgets(line, sizeof(line), file)) {
       if (strncmp(line, "Name:", 5) == 0) {
@@ -437,7 +434,7 @@ void* calculateStoreBaskettValue(void* args){
     sem_wait(&start_threads_sem);
     printf("in calculating: TID: %ld and PID: %d\n", pthread_self(), getpid());
     //printf("im in\n");
-    sleep(3);
+    //sleep(3);
    sem_wait(g_shopping_list_sem);
    UserShoppingList* shoppingList = (UserShoppingList*)args;
    for(int i = 0; i < MAX_storeCount; i++){
@@ -750,10 +747,11 @@ void* searchProductInCategory(void* args){
            char threadLogMsg[MAX_PATH_LEN];
            snprintf(threadLogMsg, sizeof(threadLogMsg), "TID: %ld searching file: %s | Product: %s | Status: FOUND",
            pthread_self(), input->filepath, proNames[i]);
-           writeToLogFile(filename, shoppingList->userID, orderID, threadLogMsg);
+           writeToLogFile(filename, shoppingList->userID, *input->orderID, threadLogMsg);
 
            printf("i found it in %s!!!!\n", input->filepath);
            printf("TID found: %ld\n",pthread_self());
+           printf("ordeID %d\n",*input->orderID);
 
            memcpy(input->product->name, product->name, sizeof(product->name));
             memcpy(input->product->lastModified, product->lastModified, sizeof(product->lastModified));
@@ -791,7 +789,7 @@ void* searchProductInCategory(void* args){
         char failedSreachMsg[MAX_PATH_LEN];
         snprintf(failedSreachMsg, sizeof(failedSreachMsg), "TID: %ld searching file: %s | Product: %s | Status: NOT FOUND",
         pthread_self(),input->filepath, proNames[i]);
-        writeToLogFile(filename, shoppingList->userID, orderID, failedSreachMsg);
+        writeToLogFile(filename, shoppingList->userID, *input->orderID, failedSreachMsg);
        }
    }
    free(product);
@@ -851,6 +849,7 @@ void processCategories(int storeNum, const char* storePath, UserShoppingList* sh
                inputs[j]->product = malloc(sizeof(Product));
                inputs[j]->shoppingList = shoppingList;
                inputs[j]->storeNum = storeNum;
+               inputs[j]->orderID = &orderID;
                 if (pthread_create(&threads[j], NULL, searchProductInCategory, (void*)inputs[j]) != 0) {
                    perror("pthread_create failed");
                    exit(EXIT_FAILURE);
@@ -872,21 +871,17 @@ void processCategories(int storeNum, const char* storePath, UserShoppingList* sh
                 usleep(7);
            }
             //for(long int o = 0; o < 999999; o++){}
-            printf("category exiting! : %d\n", shoppingList->stopThread);
+            //printf("category exiting! : %d\n", shoppingList->stopThread);
            munmap(shoppingList, sizeof(UserShoppingList) * 10 + sizeof(int));
            exit(0);
        } else if (pidCategory < 0) {
            perror("Failed to fork for category\n");
        }
    }
-
-
    // Wait for all child processes
    for (int k = 0; k < categoryCount; k++) {
        wait(NULL);
    }
-
-
    // Free memory
    for (int k = 0; k < shoppingList->productCount; k++) {
        free(productNames[k]);
