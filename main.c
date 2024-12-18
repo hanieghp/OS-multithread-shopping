@@ -578,7 +578,7 @@ void writeToLogFile(const char* categoryPath, const char* userID, int orderID, c
   char logFileName[MAX_PATH_LEN];
   snprintf(logFileName, sizeof(logFileName), "%s/%s_%d.log", logDir, userID, orderID);
 
-
+  sem_wait(g_log_sem);
   FILE* logFile = fopen(logFileName, "a");
   if(!logFile){
       perror("can't open log file");
@@ -586,6 +586,7 @@ void writeToLogFile(const char* categoryPath, const char* userID, int orderID, c
   }
   fprintf(logFile, "%s\n", message);
   fclose(logFile);
+  sem_post(g_log_sem);
 }
 
 void updateProductRating(UserShoppingList* shoppingList, double newRating, pthread_t callingThreadID, int storeIndex, int productIndex) {
@@ -641,6 +642,7 @@ void updateProductRating(UserShoppingList* shoppingList, double newRating, pthre
         perror("Failed to update product file");
     }
     sem_post(g_search_sem);
+    printf("Rating: TID: %ld and PID: %d\n", pthread_self(), getpid());
     if(sem_post(g_rating_sem) == -1){
         perror("post fail, rating");
     }
@@ -729,7 +731,7 @@ void* searchProductInCategory(void* args){
             if(shoppingList->bestStore == input->storeNum){
                 if (shoppingList->products[shoppingList->bestStore][i].foundFlag) {
                     updateProductRating(shoppingList,shoppingList->newRating[i],pthread_self() ,shoppingList->bestStore,i);
-                    printf("im updateing rate\n");
+                    printf("im updating rate\n");
                 }
                     
             }
