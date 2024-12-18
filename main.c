@@ -451,12 +451,12 @@ void* calculateStoreBaskettValue(void* args){
    pthread_mutex_unlock(&shoppingList->mutex);
    pthread_cond_broadcast(&shoppingList->cond);
    if(check_user_store_in_file(FILE_ADDRESS, shoppingList->userID, shoppingList->bestStore)){
-   printf("wow , good for you ! youll get discount from us!");
+   printf("wow , good for you ! youll get discount from us!\n");
    shoppingList->totalCost = shoppingList->totalCost*0.9;
    }
    //printf("userId : %s\n", shoppingList->userID);
    write_user_store_to_file(FILE_ADDRESS, shoppingList->userID, shoppingList->bestStore);
-   printf("basket exiting");
+   //printf("basket exiting");
    pthread_exit(NULL);
   return NULL;
 }
@@ -468,6 +468,7 @@ void* rateProducts(void* args) {
         usleep(7);
     }
     //sleep(30);
+    printf("Rating: TID: %ld and PID: %d\n", pthread_self(), getpid());
     printf("\nPlease rate the products you've purchased:\n");
     int selectedStore = shoppingList->bestStore;
     if(selectedStore == -1){
@@ -636,13 +637,12 @@ void updateProductRating(UserShoppingList* shoppingList, double newRating, pthre
         fprintf(file, "Last Modified: %s\n", formattedTime);
         fclose(file);
         printf("Product rating updated successfully\n");
-        printf("RATE: TID: %ld and PID: %d\n", pthread_self(), getpid());
+        printf("UPDATE RATE: TID: %ld and PID: %d\n", pthread_self(), getpid());
         printf("new score is %.2f\n", product->score);
     } else {
         perror("Failed to update product file");
     }
     sem_post(g_search_sem);
-    printf("Rating: TID: %ld and PID: %d\n", pthread_self(), getpid());
     if(sem_post(g_rating_sem) == -1){
         perror("post fail, rating");
     }
@@ -950,7 +950,7 @@ void* finalizeShoppingList(void* args){
     pthread_mutex_lock(&shoppingList->mutex);
     shoppingList->processingComplete = 1;
     pthread_mutex_unlock(&shoppingList->mutex);*/
-    printf("final exiting!!!!");
+    //printf("final exiting!!!!");
     pthread_exit(NULL);
     return NULL;
 }
