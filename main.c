@@ -68,9 +68,11 @@ typedef struct {
  bool stopThread;
   bool stopFork;
   bool stopFinal;
+  bool stopRating;
  pthread_mutex_t mutex;
  pthread_cond_t cond;
  int bestStore;
+ int newRating[MAX_PRODUCTS];
 } UserShoppingList;
 
 typedef struct {
@@ -86,60 +88,6 @@ typedef struct {
   pthread_cond_t stateCond;
   int* orderID;
 } threadInput;
-
-typedef struct {
-    pthread_t items[100];
-    int front;
-    int rear;
-} Queue;
-
-// Function to initialize the queue
-void initializeQueue(Queue* q)
-{
-    q->front = -1;
-    q->rear = 0;
-}
-
-// Function to check if the queue is empty
-bool isEmpty(Queue* q) { return (q->front == q->rear - 1); }
-
-// Function to check if the queue is full
-bool isFull(Queue* q) { return (q->rear == 100); }
-
-// Function to add an element to the queue (Enqueue
-// operation)
-void enqueue(Queue* q, int value)
-{
-    if (isFull(q)) {
-        printf("Queue is full\n");
-        return;
-    }
-    q->items[q->rear] = value;
-    q->rear++;
-}
-
-// Function to remove an element from the queue (Dequeue
-// operation)
-void dequeue(Queue* q)
-{
-    if (isEmpty(q)) {
-        printf("Queue is empty\n");
-        return;
-    }
-    q->front++;
-}
-
-// Function to get the element at the front of the queue
-// (Peek operation)
-int peek(Queue* q)
-{
-    if (isEmpty(q)) {
-        printf("Queue is empty\n");
-        return -1; // return some default value or handle
-                   // error differently
-    }
-    return q->items[q->front + 1];
-}
 
 sem_t *g_search_sem = NULL;
 sem_t *g_result_sem = NULL;
@@ -566,34 +514,35 @@ void updateProductRating(UserShoppingList* shoppingList, double newRating, pthre
 
 void* rateProducts(void* args) {
     sem_wait(&start_threads_sem);
-  UserShoppingList* shoppingList = (UserShoppingList*)args;
+    UserShoppingList* shoppingList = (UserShoppingList*)args;
 
-  printf("\nPlease rate the products you've purchased:\n");
-   int selectedStore = shoppingList->bestStore;
-  if(selectedStore == -1){
-      printf("no store found for RATING\n");
-      sem_post(&start_threads_sem);
-      pthread_exit(NULL);
-      return NULL;
-  }
+    printf("\nPlease rate the products you've purchased:\n");
+    int selectedStore = shoppingList->bestStore;
+    if(selectedStore == -1){
+        printf("no store found for RATING\n");
+        sem_post(&start_threads_sem);
+        pthread_exit(NULL);
+        return NULL;
+    }
 
-  printf("best store is %d",selectedStore);
-
-  for (int i = 0; i < shoppingList->productCount; i++) {
-      double rating;
-      if (shoppingList->products[selectedStore][i].foundFlag) {
-          printf("Rate product %s (1-5 stars): ", shoppingList->products[selectedStore][i].name);
-          scanf("%lf", &rating);
-          while (rating < 1 || rating > 5) {
-           printf("Invalid rating. Please enter a rating between 1 and 5: ");
-              scanf("%lf", &rating);
-          }
-          updateProductRating(shoppingList,rating,pthread_self() ,selectedStore,i);
-      }
-  }
-  pthread_exit(NULL);
+    printf("best store is %d",selectedStore);
+    for (int i = 0; i < shoppingList->productCount; i++) {
+        if (shoppingList->products[selectedStore][i].foundFlag) {
+            printf("Rate product %s (1-5 stars): ", shoppingList->products[selectedStore][i].name);
+            scanf("%lf", &shoppingList->newRating[i]);
+            while (shoppingList->newRating[i] < 1 || shoppingList->newRating[i] > 5) {
+            printf("Invalid rating. Please enter a rating between 1 and 5: ");
+                scanf("%lf", &shoppingList->newRating[i]);
+            }
+        }
+    }
+    pthread_mutex_lock(&shoppingList->mutex);
+    shoppingList->stopRating = false;
+    pthread_mutex_unlock(&shoppingList->mutex);
+    pthread_cond_broadcast(&shoppingList->cond);
+    pthread_exit(NULL);
   
-  return NULL;
+    return NULL;
 }
 
 int getNextOrderID(const char* storePath, const char* categoryPath, const char* userID) {
@@ -753,10 +702,22 @@ void* searchProductInCategory(void* args){
             //pthread_mutex_unlock(&shoppingList->mutex);
             //printf("im done, %d bestStore : %d\n",shoppingList->stopThread, shoppingList->bestStore);
             if(shoppingList->bestStore == input->storeNum){
-                shoppingList->stopFork = false;
-                printf("im updating it\n");
+                printf("im updating entity\n");
                 updateProductEntity(shoppingList);
             }
+            while(shoppingList->stopRating){
+                usleep(7);
+                //pthread_cond_wait(&shoppingList->cond, &shoppingList->mutex);
+            }
+            for (int i = 0; i < shoppingList->productCount; i++) {
+                if (shoppingList->products[shoppingList->bestStore][i].foundFlag) {
+                    updateProductRating(shoppingList,shoppingList->newRating[i],pthread_self() ,shoppingList->bestStore,i);
+                    printf("im updateing rate\n");
+                }
+            }
+            printf("im updated all\n");
+            sleep(1);
+            shoppingList->stopFork = false;
        }
        else{
         char failedSreachMsg[MAX_PATH_LEN];
@@ -997,6 +958,7 @@ void processUser(UserShoppingList* shoppingList){
     shoppingList->stopFork= true;
     shoppingList->stopThread= true;
     shoppingList->stopFinal= true;
+    shoppingList->stopRating= true;
   if(pthread_create(&basketValueThread ,NULL, &calculateStoreBaskettValue, (void*)shoppingList) != 0){
     perror("failed to create first thread");
     return;
