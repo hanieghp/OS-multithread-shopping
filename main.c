@@ -91,6 +91,7 @@ typedef struct {
   int* orderID;
 } threadInput;
 
+sem_t *g_log_sem = NULL;
 sem_t *g_search_sem = NULL;
 sem_t *g_result_sem = NULL;
 sem_t *g_rating_sem = NULL;
@@ -180,7 +181,9 @@ char ** getsubfiles(char *dir){
 }
 
 // Function to read data from dataset file
+sem_wait(g_search_sem);
 Product* readProductFromFile(const char* filepath) {
+sem_post(g_search_sem); 
   FILE* file = fopen(filepath, "r");
   if (!file) {
       return NULL;
@@ -226,7 +229,9 @@ void listCategoryProducts(const char* categoryPath) {
       if (entry->d_type == DT_REG) {  // If it's a regular file
           char filepath[MAX_PATH_LEN];
           snprintf(filepath, sizeof(filepath), "%s/%s", categoryPath, entry->d_name);
+          sem_wait(g_search_sem);
           Product* product = readProductFromFile(filepath);
+          sem_post(g_search_sem);
           if (product) {
               printf("- %s (Price: %.2f, Score: %.2f, Quantity: %d)\n",
                      product->name, product->price, product->score, product->entity);
@@ -278,7 +283,9 @@ char* findProductFilePath(const char* productName) {
            categories[j][strcspn(categories[j], "\n")] = 0;
            char** productFiles = getsubfiles(categories[j]);
            for (int k = 0; productFiles[k] != NULL; k++) {
+                sem_wait(g_search_sem);
                Product* tempProduct = readProductFromFile(productFiles[k]);
+               sem_post(g_search_sem);
                if (tempProduct && strcasecmp(tempProduct->name, productName) == 0) {
                    foundPath = strdup(productFiles[k]);
                    free(tempProduct);
@@ -619,6 +626,7 @@ void updateProductRating(UserShoppingList* shoppingList, double newRating, pthre
 
 
     FILE* file = fopen(filePath, "w");
+    sem_wait(g_search_sem);
     if (file) {
         fprintf(file, "Name: %s\n", product->name);
         fprintf(file, "Price: %.2f\n", product->price);
@@ -632,6 +640,7 @@ void updateProductRating(UserShoppingList* shoppingList, double newRating, pthre
     } else {
         perror("Failed to update product file");
     }
+    sem_post(g_search_sem);
     if(sem_post(g_rating_sem) == -1){
         perror("post fail, rating");
     }
@@ -651,9 +660,9 @@ void* searchProductInCategory(void* args){
     input->threadState = THREAD_SEARCHING;
     pthread_mutex_unlock(&input->stateMutex);*/
  //printf("storepath %s", input->filepath);
-   //sem_wait(g_search_sem);
+   sem_wait(g_search_sem);
    Product* product = readProductFromFile(input->filepath);
-   //sem_post(g_search_sem);
+   sem_post(g_search_sem);
  //printf("storepath %s");
    char storePath[MAX_PATH_LEN];
    const char *datasetPath = strstr(input->filepath, "Dataset/");
@@ -898,6 +907,7 @@ void updateProductEntity(int i, UserShoppingList* shoppingList){
             char formattedTime[20];
             strftime(formattedTime, sizeof(formattedTime), "%Y-%m-%d %H:%M:%S", localtime(&now));
             FILE* file = fopen(filePath, "w");
+            sem_wait(g_search_sem);
             if(file){
                 fprintf(file, "Name: %s\n", product->name);
                 fprintf(file, "Price: %.2f\n", product->price);
@@ -910,6 +920,7 @@ void updateProductEntity(int i, UserShoppingList* shoppingList){
             } else {
                 perror("fail to update entity file");
             }
+            sem_post(g_search_sem);
         } else {
             printf("the store doesn't have enough %s product\n", product->name);
         }
@@ -954,8 +965,9 @@ void processUser(UserShoppingList* shoppingList){
   g_search_sem = sem_open(SEM_PRODUCT_SEARCH, O_CREAT, 0644, 1);
   g_result_sem = sem_open(SEM_RESULT_UPDATE, O_CREAT, 0644, 1);
   g_shopping_list_sem = sem_open(SEM_SHOPPING_LIST, O_CREAT, 0644, 1);
+  g_log_sem = sem_open(SEM_SHOPPING_LIST, O_CREAT, 0644, 1);
    if (g_search_sem == SEM_FAILED || g_result_sem == SEM_FAILED ||
-      g_shopping_list_sem == SEM_FAILED) {
+      g_shopping_list_sem == SEM_FAILED || g_log_sem == SEM_FAILED) {
       perror("Semaphore creation failed");
       return;
     }
@@ -1021,6 +1033,7 @@ void processUser(UserShoppingList* shoppingList){
    }
 
   // Clean up semaphores
+  sem_close(g_log_sem);
   sem_close(g_search_sem);
   sem_close(g_result_sem);
   sem_close(g_shopping_list_sem);
