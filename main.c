@@ -70,6 +70,7 @@ typedef struct {
   bool stopFinal;
  pthread_mutex_t mutex;
  pthread_cond_t cond;
+ int bestStore;
 } UserShoppingList;
 
 typedef struct {
@@ -433,81 +434,75 @@ bool check_user_store_in_file(const char *filePath, char* userID, int storeNum) 
 
 void* calculateStoreBaskettValue(void* args){
     //sem_wait(&start_threads_sem);
-    printf("in calculating: TID: %ld and PID: %d\n", pthread_self(), getpid());
-    //printf("im in\n");
-    sleep(3);
-   sem_wait(g_shopping_list_sem);
+   //printf("in calculating: TID: %ld and PID: %d\n", pthread_self(), getpid());
+   //printf("im in\n");
+   sleep(3);
+  sem_wait(g_shopping_list_sem);
 
-    printf("in calculating: TID: %ld and PID: %d\n", pthread_self(), getpid());
-   UserShoppingList* shoppingList = (UserShoppingList*)args;
-   for(int i = 0; i < MAX_storeCount; i++){
-       shoppingList->store_match_count[i] = 0;
+
+   printf("in calculating: TID: %ld and PID: %d\n", pthread_self(), getpid());
+  UserShoppingList* shoppingList = (UserShoppingList*)args;
+  double bestTotalValue = 0.0;
+  int bestStore = -1;
+  for(int i = 0; i < MAX_storeCount; i++){
+      double totalBasketValue = 0.0;
+      int totalCost = 0;
+      int allProductFound = 1;
+
+
+      for(int j = 0; j < shoppingList->productCount; j++){
+          Product* curProduct = &(shoppingList->products[i][j]);
+
+
+          if(curProduct->foundFlag){
+              double productValue = calculateProductValue(curProduct);
+
+
+              if(curProduct->entity >= shoppingList->entity[j]){
+              totalBasketValue += productValue;
+              totalCost += curProduct->price * shoppingList->entity[j];
+              }
+              else{
+                  allProductFound = 0;
+                  printf("store %d just have %d, you want %d, you can't buy from\n", i+1, curProduct->entity, shoppingList->entity[j]);
+                  break;
+                  }
+          }
+          else{
+              allProductFound = 0;
+              printf("store %d doesn't have %s, you can't buy from\n", i+1, curProduct->name);
+              break;
+          }
+      }
+      if(allProductFound){
+          printf("allfound\n");
+          if(shoppingList->budgetCap == -1 || totalCost <= shoppingList->budgetCap){
+           printf("store %d value %.2f\n",i, totalBasketValue);
+              if(totalBasketValue > bestTotalValue){
+                  bestTotalValue = totalBasketValue;
+                  printf("besttotalValue %.2f\n", bestTotalValue);
+                  shoppingList->bestStore = i;
+              }
+          }
+      }
+      sem_post(g_shopping_list_sem);
+  }
+  printf("best store is: %d valueBasket: %.2f\n",shoppingList->bestStore + 1, bestTotalValue);
+   pthread_mutex_lock(&shoppingList->mutex);
+   shoppingList->stopThread = false;
+   pthread_mutex_unlock(&shoppingList->mutex);
+   pthread_cond_broadcast(&shoppingList->cond);
+   if(check_user_store_in_file(FILE_ADDRESS, shoppingList->userID, bestStore)){
+   printf("wow , good for you ! youll get discount from us!");
+   shoppingList->totalCost = shoppingList->totalCost*0.9;
    }
-   double bestTotalValue = 0.0;
-   int bestStore = -1;
-   for(int i = 0; i < MAX_storeCount; i++){
-       double totalBasketValue = 0.0;
-       int totalCost = 0;
-       int allProductFound = 1;
-
-
-       for(int j = 0; j < shoppingList->productCount; j++){
-           Product* curProduct = &(shoppingList->products[i][j]);
-
-
-           if(curProduct->foundFlag){
-               double productValue = calculateProductValue(curProduct);
-
-
-               if(curProduct->entity >= shoppingList->entity[j]){
-               totalBasketValue += productValue;
-               totalCost += curProduct->price * shoppingList->entity[j];
-               }
-               else{
-                   allProductFound = 0;
-                   printf("store %d just have %d, you want %d, you can't buy from\n", i+1, curProduct->entity, shoppingList->entity[j]);
-                   break;
-               }
-           }
-           else{
-               allProductFound = 0;
-               printf("store %d doesn't have %s, you can't buy from\n", i+1, curProduct->name);
-               break;
-           }
-       }
-       if(allProductFound){
-           //printf("allfound\n");
-           if(shoppingList->budgetCap == -1 || totalCost <= shoppingList->budgetCap){
-               if(totalBasketValue > bestTotalValue){
-                   bestTotalValue = totalBasketValue;
-                   bestStore = i;
-               }
-               shoppingList->store_match_count[bestStore] = 1;
-               shoppingList->totalCost = totalCost;
-           }
-       }
-       //printf("store %d basket value: %.2f\n", i+1, totalBasketValue);
-
-       sem_post(g_shopping_list_sem);
-   }
-   printf("best store is: %d\n",bestStore);
-    pthread_mutex_lock(&shoppingList->mutex);
-    shoppingList->stopFinal = false;
-    pthread_mutex_unlock(&shoppingList->mutex);
-    pthread_cond_broadcast(&shoppingList->cond);
-    if(check_user_store_in_file(FILE_ADDRESS, shoppingList->userID, bestStore)){
-    printf("wow , good for you ! youll get discount from us!");
-    shoppingList->totalCost = shoppingList->totalCost*0.9;
-    }
-    //printf("userId : %s\n", shoppingList->userID);
-    write_user_store_to_file(FILE_ADDRESS, shoppingList->userID, bestStore);
-
-    pthread_exit(NULL);
-   return NULL;
+   //printf("userId : %s\n", shoppingList->userID);
+   write_user_store_to_file(FILE_ADDRESS, shoppingList->userID, bestStore);
+   pthread_exit(NULL);
+  return NULL;
 }
 
-
-void updateProductRating(int newEntity, const char* productName, double newRating, pthread_t callingThreadID, int storeIndex, int productIndex) {
+void updateProductRating(const char* productName, double newRating, pthread_t callingThreadID, int storeIndex, int productIndex) {
     g_rating_sem = sem_open(SEM_RATING_UPDATE, O_CREAT, 0644, 1);
     if (g_rating_sem == SEM_FAILED) {
         perror("Semaphore creation failed for rating update");
@@ -533,7 +528,6 @@ void updateProductRating(int newEntity, const char* productName, double newRatin
         return;
     }
 
-
     if(sem_wait(g_rating_sem) == -1){
         perror("wait fail, rating");
         free(filePath);
@@ -541,8 +535,6 @@ void updateProductRating(int newEntity, const char* productName, double newRatin
         sem_close(g_rating_sem);
         return;
     }
-
-
     //sem_wait(g_rating_sem);
     printf("old score is: %.2f\n", product->score);
 
@@ -551,7 +543,6 @@ void updateProductRating(int newEntity, const char* productName, double newRatin
     product->score = (oldScore + newRating) / 2.0;
     time_t now;
     time(&now);
-
 
     char formattedTime[20];
     strftime(formattedTime, sizeof(formattedTime), "%Y-%m-%d %H:%M:%S", localtime(&now));
@@ -562,7 +553,7 @@ void updateProductRating(int newEntity, const char* productName, double newRatin
         fprintf(file, "Name: %s\n", product->name);
         fprintf(file, "Price: %.2f\n", product->price);
         fprintf(file, "Score: %.2f\n", product->score);
-        fprintf(file, "Entity: %d\n", newEntity);
+        fprintf(file, "Entity: %d\n", product->entity);
         fprintf(file, "Last Modified: %s\n", formattedTime);
         fclose(file);
         printf("Product rating updated successfully\n");
@@ -577,7 +568,6 @@ void updateProductRating(int newEntity, const char* productName, double newRatin
         perror("post fail, rating");
     }
 
-
     free(product);
     free(filePath);
 
@@ -591,13 +581,7 @@ void* rateProducts(void* args) {
 
 
   printf("\nPlease rate the products you've purchased:\n");
-   int selectedStore = -1;
-  for(int i = 0; i < MAX_storeCount; i++){
-      if(shoppingList->store_match_count[i] == 1){
-          selectedStore = i;
-          break;
-      }
-  }
+   int selectedStore = shoppingList->bestStore;
   if(selectedStore == -1){
       printf("no store found for RATING\n");
       return NULL;
@@ -611,8 +595,7 @@ void* rateProducts(void* args) {
            printf("Invalid rating. Please enter a rating between 1 and 5: ");
               scanf("%lf", &rating);
           }
-          int newEntity = shoppingList->products[selectedStore][i].entity - shoppingList->entity[i];
-          updateProductRating(newEntity ,shoppingList->products[selectedStore][i].name,rating,pthread_self() ,selectedStore,i);
+          updateProductRating(shoppingList->products[selectedStore][i].name,rating,pthread_self() ,selectedStore,i);
       }
   }
   pthread_exit(NULL);
@@ -775,7 +758,7 @@ void* searchProductInCategory(void* args){
                 //pthread_cond_wait(&shoppingList->cond, &shoppingList->mutex);
             }
             //pthread_mutex_unlock(&shoppingList->mutex);
-            printf("im done, bestStore : %d %d, %d, %d\n",shoppingList->stopThread,  shoppingList->store_match_count[0], shoppingList->store_match_count[1], shoppingList->store_match_count[2]);
+            printf("im done, %d bestStore : %d\n",shoppingList->stopThread, shoppingList->bestStore);
             if(shoppingList->store_match_count[input->storeNum] == 1){
                 shoppingList->stopFork = false;
                 updateProductEntity(shoppingList);
@@ -933,13 +916,7 @@ void processStores(UserShoppingList* shoppingList) {
 
 
 void updateProductEntity(UserShoppingList* shoppingList){
-    int selectedStore = -1;
-    for(int i = 0; i < MAX_storeCount; i++){
-        if(shoppingList->store_match_count[i] == 1){
-            selectedStore = i;
-            break;
-        }
-    }
+    int selectedStore = shoppingList->bestStore;
     if(selectedStore == -1){
         printf("No store found\n");
         return;
