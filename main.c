@@ -67,8 +67,8 @@ typedef struct {
  int shmFd;
  bool stopThread;
   bool stopFork;
- pthread_mutex_t *mutex;
- pthread_cond_t *cond;
+ pthread_mutex_t mutex;
+ pthread_cond_t cond;
 } UserShoppingList;
 
 typedef struct {
@@ -431,11 +431,13 @@ bool check_user_store_in_file(const char *filePath, char* userID, int storeNum) 
 
 
 void* calculateStoreBaskettValue(void* args){
-    sem_wait(&start_threads_sem);
-    printf("PID %ld and PID %d calculating basket Value\n", getpid(), pthread_self());
+    //sem_wait(&start_threads_sem);
+    printf("in calculating: TID: %ld and PID: %d\n", pthread_self(), getpid());
     //printf("im in\n");
-    //sleep(3);
+    sleep(3);
    sem_wait(g_shopping_list_sem);
+
+    printf("in calculating: TID: %ld and PID: %d\n", pthread_self(), getpid());
    UserShoppingList* shoppingList = (UserShoppingList*)args;
    for(int i = 0; i < MAX_storeCount; i++){
        shoppingList->store_match_count[i] = 0;
@@ -488,10 +490,10 @@ void* calculateStoreBaskettValue(void* args){
        sem_post(g_shopping_list_sem);
    }
    printf("best store is: %d\n",bestStore);
-    pthread_mutex_lock(shoppingList->mutex);
+    pthread_mutex_lock(&shoppingList->mutex);
     shoppingList->stopThread = false;
-    pthread_mutex_unlock(shoppingList->mutex);
-    pthread_cond_broadcast(shoppingList->cond);
+    pthread_mutex_unlock(&shoppingList->mutex);
+    pthread_cond_broadcast(&shoppingList->cond);
     if(check_user_store_in_file(FILE_ADDRESS, shoppingList->userID, bestStore)){
     printf("wow , good for you ! youll get discount from us!");
     shoppingList->totalCost = shoppingList->totalCost*0.9;
@@ -614,79 +616,6 @@ void* rateProducts(void* args) {
   }
   pthread_exit(NULL);
   return NULL;
-}
-
-void updateProductEntity(UserShoppingList* shoppingList){
-    int selectedStore = -1;
-    for(int i = 0; i < MAX_storeCount; i++){
-        if(shoppingList->store_match_count[i] == 1){
-            selectedStore = i;
-            break;
-        }
-    }
-    if(selectedStore == -1){
-        printf("No store found\n");
-        return;
-    }
-
-    for(int i = 0; i < shoppingList->productCount; i++){
-        Product* purchasedProduct = &(shoppingList->products[selectedStore][i]);
-
-        if(purchasedProduct->foundFlag){
-            char* filePath = findProductFilePath(purchasedProduct->name);
-            if(!filePath){
-                printf("Product %s not found\n");
-                continue;
-            }
-            Product* product = readProductFromFile(filePath);
-
-            if(!product){
-                printf("failed to read product file\n");
-                free(filePath);
-                continue;
-            }
-            
-            int userEntity = shoppingList->entity[i];
-            if(product->entity >= userEntity){
-                product->entity -= userEntity;
-
-                time_t now;
-                time(&now);
-                char formattedTime[20];
-                strftime(formattedTime, sizeof(formattedTime), "%Y-%m-%d %H:%M:%S", localtime(&now));
-                FILE* file = fopen(filePath, "w");
-                if(file){
-                    fprintf(file, "Name: %s\n", product->name);
-                    fprintf(file, "Price: %.2f\n", product->price);
-                    fprintf(file, "Score: %.2f\n", product->score);
-                    fprintf(file, "Entity: %d\n", product->entity);
-                    fprintf(file, "Last Modified: %s\n", formattedTime);
-                    fclose(file);
-                    printf("Entity: TID: %ld and PID: %d\n", pthread_self(), getpid());
-                    printf("entity updated for product %s remaining: %d\n", product->name, product->entity);
-                } else {
-                    perror("fail to update entity file");
-                }
-            } else {
-                printf("the store doesn't have enough %s product\n", product->name);
-            }
-        }
-    }
-}
-
-void* finalizeShoppingList(void* args){
-    sem_wait(&start_threads_sem);
-    sleep(2);
-
-    UserShoppingList* shoppingList = (UserShoppingList*)args;
-
-    updateProductEntity(shoppingList);
-    pthread_mutex_lock(shoppingList->mutex);
-    shoppingList->processingComplete = 1;
-    pthread_mutex_unlock(shoppingList->mutex);
-
-    pthread_exit(NULL);
-    return NULL;
 }
 
 
@@ -837,23 +766,15 @@ void* searchProductInCategory(void* args){
 
             memcpy(&(shoppingList->products[input->storeNum][i]), input->product, sizeof(Product));
 
-            /*pthread_mutex_lock(&input->stateMutex);
-            input->threadState = THREAD_FOUND;
-            pthread_cond_broadcast(&input->stateCond);
-            pthread_mutex_unlock(&input->stateMutex);
-
-            pthread_mutex_lock(&input->stateMutex);
-            while(input->threadState != THREAD_COMPLETED){
-                pthread_cond_wait(&input->stateCond, &input->stateMutex);
-            }
-            pthread_mutex_unlock(&input->stateMutex);*/
+          
             printf("im waiting\n");
-            pthread_mutex_lock(shoppingList->mutex);
-            while(stopThread){
-                pthread_cond_wait(shoppingList->cond, shoppingList->mutex);
+            //pthread_mutex_lock(&shoppingList->mutex);
+            while(shoppingList->stopThread){
+                usleep(7);
+                //pthread_cond_wait(&shoppingList->cond, &shoppingList->mutex);
             }
-            pthread_mutex_unlock(shoppingList->mutex);
-            printf("im done\n");
+            //pthread_mutex_unlock(&shoppingList->mutex);
+            printf("im done, bestStore : %d %d, %d, %d\n",shoppingList->stopThread,  shoppingList->store_match_count[0], shoppingList->store_match_count[1], shoppingList->store_match_count[2]);
             if(shoppingList->store_match_count[input->storeNum] == 1){
                 shoppingList->stopFork = false;
             }
@@ -923,7 +844,7 @@ void processCategories(int storeNum, const char* storePath, UserShoppingList* sh
                inputs[j]->shoppingList = shoppingList;
                inputs[j]->storeNum = storeNum;
                inputs[j]->orderID = &orderID;
-                if (pthread_create(&threads[j], NULL, searchProductInCategory, (void*)inputs[j]) != 0) {
+                if (pthread_create(&threads[j], NULL, &searchProductInCategory, (void*)inputs[j]) != 0) {
                    perror("pthread_create failed");
                    exit(EXIT_FAILURE);
                }
@@ -981,8 +902,10 @@ void processStores(UserShoppingList* shoppingList) {
            while(shoppingList->stopFork){
                 usleep(7);
            }
+            //for(long int o = 0; o < 999999; o++){}
+           // Cleanup in child process
            munmap(mappedList, sizeof(UserShoppingList)); // Unmap shared memory
-           //printf("store exiting!\n, stopfork : %d", shoppingList->stopFork);
+           printf("store exiting!\n, stopfork : %d", shoppingList->stopFork);
            exit(0); // Exit the child process
        }
        else if (pidStore < 0) {  // Fork failed
@@ -994,10 +917,12 @@ void processStores(UserShoppingList* shoppingList) {
    }
 
 
+   // Wait for all child processes to complete
    int status;
    while (wait(&status) > 0); // Wait for any child process to finish
 
 
+   // Free allocated memory for store names
    for (int i = 0; i < storeCount; i++) {
        free(stores[i]);
    }
@@ -1027,7 +952,8 @@ void processUser(UserShoppingList* shoppingList){
   sem_init(&start_threads_sem, 0, 0);
 
   pthread_t basketValueThread, ratingThread, finalListThread;
-
+    shoppingList->stopFork= true;
+    shoppingList->stopThread= true;
   if(pthread_create(&basketValueThread ,NULL, calculateStoreBaskettValue, (void*)shoppingList) != 0){
     perror("failed to create first thread");
     return;
@@ -1039,23 +965,13 @@ void processUser(UserShoppingList* shoppingList){
     return;
   }
   printf("PID %d create thread for Scores TID: %ld\n",getpid(), ratingThread);
-  if(pthread_create(&finalListThread, NULL, finalizeShoppingList, (void*)shoppingList) != 0){
-    perror("failed to create third thread");
-    return;
-  }
-  printf("PID %d create thread for Final TID: %ld\n", getpid(), finalListThread);
 
   processStores(shoppingList);
 
-  printf("threads startingn\n");
   sem_post(&start_threads_sem);
-  printf("thread 1 complete\n");
-  sem_post(&start_threads_sem);
-  printf("thread 2 complete\n");
   sem_post(&start_threads_sem);
 
   pthread_join(basketValueThread,NULL);
-  pthread_join(finalListThread, NULL);
   pthread_join(ratingThread,NULL);
 
   printf("ALL thread comleted\n");
@@ -1081,6 +997,9 @@ void processUser(UserShoppingList* shoppingList){
            }
        }
    }
+
+
+
 
   // Clean up semaphores
   sem_close(g_search_sem);
@@ -1122,24 +1041,31 @@ int main() {
    const int shmSize = sizeof(UserShoppingList) * 10 + sizeof(int);
    int shmFd;
 
+
    shmFd = shm_open(shmName, O_CREAT | O_RDWR, 0666);
    if (shmFd == -1) {
        perror("shm_open failed");
        exit(EXIT_FAILURE);
    }
+
+
    if (ftruncate(shmFd, shmSize) == -1) {
        perror("ftruncate failed");
        exit(EXIT_FAILURE);
    }
+
+
    void *sharedMem = mmap(NULL, shmSize, PROT_READ | PROT_WRITE, MAP_SHARED, shmFd, 0);
    if (sharedMem == MAP_FAILED) {
        perror("mmap failed");
        exit(EXIT_FAILURE);
    }
 
+
    memset(sharedMem, 0, shmSize);
    shoppingList = (UserShoppingList *)sharedMem;
    userCount = (int *)((char *)sharedMem + sizeof(UserShoppingList) *10);
+
 
    while (1) {
        pid_t pid = fork();
@@ -1149,6 +1075,7 @@ int main() {
        } else if (pid == 0) {
            int currentUserIndex = *userCount;
            (userCount) -= (int*)(sizeof(UserShoppingList));
+
 
            UserShoppingList *currentUser = &shoppingList[currentUserIndex];
             shoppingList->stopThread = true; 
