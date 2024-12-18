@@ -458,7 +458,10 @@ void* calculateStoreBaskettValue(void* args){
 void* rateProducts(void* args) {
     //sem_wait(&start_threads_sem);
     UserShoppingList* shoppingList = (UserShoppingList*)args;
-
+    while(shoppingList->stopThread){
+        usleep(7);
+        //pthread_cond_wait(&shoppingList->cond, &shoppingList->mutex);
+    }
     printf("\nPlease rate the products you've purchased:\n");
     int selectedStore = shoppingList->bestStore;
     if(selectedStore == -1){
