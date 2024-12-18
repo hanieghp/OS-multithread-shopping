@@ -169,3 +169,6 @@ at the end :
 1. a thread for calculating the best store(basketThread function)
 2. a thread for calculating rates and waking up the threads that have found them and tell them to update that(ratingThread)
 3. a thread for calculating entities and waking up the threads that have found them and tell them to update that(entityThread)
+
+we have semaphore and locks for the files that are going to be read or write and for the parts that threads are gonna access at the same time.
+
