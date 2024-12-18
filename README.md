@@ -165,6 +165,8 @@ we want to search for that items :
 1. forking for stores
 2. forking for categories
 3. threading for items
+
+
 at the end :
 1. a thread for calculating the best store(basketThread function)
 2. a thread for calculating rates and waking up the threads that have found them and tell them to update that(ratingThread)
