@@ -458,7 +458,7 @@ void* calculateStoreBaskettValue(void* args){
 void* rateProducts(void* args) {
     //sem_wait(&start_threads_sem);
     UserShoppingList* shoppingList = (UserShoppingList*)args;
-    while(shoppingList->stopThread){
+    while(shoppingList->finish){
         usleep(7);
         //pthread_cond_wait(&shoppingList->cond, &shoppingList->mutex);
     }
@@ -712,15 +712,13 @@ void* searchProductInCategory(void* args){
                 printf("im updating entity\n");
                 updateProductEntity(shoppingList);
             }
-            
+            shoppingList->finish = false;
             while(shoppingList->stopRating){
                 usleep(7);
                 //pthread_cond_wait(&shoppingList->cond, &shoppingList->mutex);
             }
 
             if(shoppingList->bestStore == input->storeNum){
-                printf("im updating entity\n");
-                updateProductEntity(shoppingList);
                 for (int i = 0; i < shoppingList->productCount; i++) {
                     if (shoppingList->products[shoppingList->bestStore][i].foundFlag) {
                         updateProductRating(shoppingList,shoppingList->newRating[i],pthread_self() ,shoppingList->bestStore,i);
@@ -972,6 +970,7 @@ void processUser(UserShoppingList* shoppingList){
     shoppingList->stopThread= true;
     shoppingList->stopFinal= true;
     shoppingList->stopRating= true;
+    shoppingList->finish= true;
   if(pthread_create(&basketValueThread ,NULL, &calculateStoreBaskettValue, (void*)shoppingList) != 0){
     perror("failed to create first thread");
     return;
