@@ -492,12 +492,12 @@ void* calculateStoreBaskettValue(void* args){
    shoppingList->stopFinal = false;
    pthread_mutex_unlock(&shoppingList->mutex);
    pthread_cond_broadcast(&shoppingList->cond);
-   if(check_user_store_in_file(FILE_ADDRESS, shoppingList->userID, bestStore)){
+   if(check_user_store_in_file(FILE_ADDRESS, shoppingList->userID, shoppingList->bestStore)){
    printf("wow , good for you ! youll get discount from us!");
    shoppingList->totalCost = shoppingList->totalCost*0.9;
    }
    //printf("userId : %s\n", shoppingList->userID);
-   write_user_store_to_file(FILE_ADDRESS, shoppingList->userID, bestStore);
+   write_user_store_to_file(FILE_ADDRESS, shoppingList->userID, shoppingList->bestStore);
    printf("basket exiting");
    pthread_exit(NULL);
   return NULL;
